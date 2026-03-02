@@ -1,0 +1,285 @@
+package sheryl_and_benny
+
+import "vendor:raylib"
+import dm "../dotmap"
+import "core:math"
+import "core:math/linalg"
+
+PLAYER_SPEED    :: 80.0
+ANIM_FRAME_TIME :: 0.15
+STICK_DEADZONE  :: 0.25
+SPRITE_SRC_SIZE :: 24
+SPRITE_DST_SIZE :: 16
+
+Player :: struct {
+	pos:           raylib.Vector2,
+	aim_dir:       raylib.Vector2,
+	move_dir:      raylib.Vector2,
+	sprite_sheet:  raylib.Texture2D,
+	frame_count:   i32,
+	current_frame: i32,
+	anim_timer:    f32,
+	facing_left:   bool,
+	has_blaster:   bool,
+	blaster_angle: f32,
+	is_ai:         bool,
+	gamepad_id:    i32,
+}
+
+get_player_input :: proc(player: ^Player, other_player: ^Player, camera: raylib.Camera2D) {
+	player.move_dir = {0, 0}
+	player.aim_dir = {0, 0}
+
+	if player.is_ai {
+		// Simple AI: move toward the other player if far enough away
+		diff := other_player.pos - player.pos
+		dist := linalg.length(diff)
+		if dist > f32(TILE_SIZE) * 2 {
+			player.move_dir = linalg.normalize(diff)
+		}
+		// AI aims at the other player
+		if dist > 0 {
+			player.aim_dir = linalg.normalize(diff)
+		}
+		update_blaster_angle(player)
+		return
+	}
+
+	// Check gamepad
+	if raylib.IsGamepadAvailable(player.gamepad_id) {
+		// Left stick for movement
+		lx := raylib.GetGamepadAxisMovement(player.gamepad_id, .LEFT_X)
+		ly := raylib.GetGamepadAxisMovement(player.gamepad_id, .LEFT_Y)
+		if abs(lx) > STICK_DEADZONE || abs(ly) > STICK_DEADZONE {
+			player.move_dir = {lx, ly}
+			mag := linalg.length(player.move_dir)
+			if mag > 1.0 {
+				player.move_dir /= mag
+			}
+		}
+
+		// Right stick for aiming
+		rx := raylib.GetGamepadAxisMovement(player.gamepad_id, .RIGHT_X)
+		ry := raylib.GetGamepadAxisMovement(player.gamepad_id, .RIGHT_Y)
+		if abs(rx) > STICK_DEADZONE || abs(ry) > STICK_DEADZONE {
+			player.aim_dir = linalg.normalize(raylib.Vector2{rx, ry})
+		}
+	} else if player.gamepad_id == 0 {
+		// Keyboard fallback for P1 only
+		if raylib.IsKeyDown(.W) {
+			player.move_dir.y -= 1
+		}
+		if raylib.IsKeyDown(.S) {
+			player.move_dir.y += 1
+		}
+		if raylib.IsKeyDown(.A) {
+			player.move_dir.x -= 1
+		}
+		if raylib.IsKeyDown(.D) {
+			player.move_dir.x += 1
+		}
+
+		mag := linalg.length(player.move_dir)
+		if mag > 0 {
+			player.move_dir /= mag
+		}
+
+		// Mouse aim
+		mouse_screen := raylib.GetMousePosition()
+		mouse_world := raylib.GetScreenToWorld2D(mouse_screen, camera)
+		player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
+		aim_vec := mouse_world - player_center
+		aim_mag := linalg.length(aim_vec)
+		if aim_mag > 0 {
+			player.aim_dir = aim_vec / aim_mag
+		}
+	}
+
+	update_blaster_angle(player)
+}
+
+update_blaster_angle :: proc(player: ^Player) {
+	if !player.has_blaster {
+		return
+	}
+	aim_len := linalg.length(player.aim_dir)
+	if aim_len > 0 {
+		angle := math.atan2(player.aim_dir.y, player.aim_dir.x) * (180.0 / math.PI)
+
+		// Clamp to forward-facing 180-degree arc so the weapon never points behind the player
+		if player.facing_left {
+			if angle > -90 && angle < 90 {
+				angle = angle >= 0 ? 90 : -90
+			}
+		} else {
+			angle = clamp(angle, -90, 90)
+		}
+
+		player.blaster_angle = angle
+	}
+}
+
+move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32) {
+	if player.move_dir.x == 0 && player.move_dir.y == 0 {
+		return
+	}
+
+	velocity := player.move_dir * PLAYER_SPEED * dt
+	size := f32(SPRITE_DST_SIZE)
+	inset: f32 = 1.0
+
+	// Try X axis
+	new_x := player.pos.x + velocity.x
+	if !check_collision(new_x + inset, player.pos.y + inset, size - inset * 2, size - inset * 2, map_data) {
+		player.pos.x = new_x
+	}
+
+	// Try Y axis
+	new_y := player.pos.y + velocity.y
+	if !check_collision(player.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, map_data) {
+		player.pos.y = new_y
+	}
+
+	// Update facing direction and flip blaster to match
+	old_facing := player.facing_left
+	if player.move_dir.x < -0.1 {
+		player.facing_left = true
+	} else if player.move_dir.x > 0.1 {
+		player.facing_left = false
+	}
+	if player.has_blaster && player.facing_left != old_facing {
+		if player.blaster_angle >= 0 {
+			player.blaster_angle = 180 - player.blaster_angle
+		} else {
+			player.blaster_angle = -180 - player.blaster_angle
+		}
+	}
+}
+
+check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map) -> bool {
+	// Check all four corners of the rect
+	corners := [4]raylib.Vector2{
+		{x, y},
+		{x + w, y},
+		{x, y + h},
+		{x + w, y + h},
+	}
+
+	for corner in corners {
+		tx := int(corner.x) / TILE_SIZE
+		ty := int(corner.y) / TILE_SIZE
+
+		// Out of bounds = blocked
+		if tx < 0 || ty < 0 || ty >= map_data.height || tx >= len(map_data.grid[ty]) {
+			return true
+		}
+
+		cell := map_data.grid[ty][tx]
+		sym := cell.symbol
+
+		// p tiles are passable (spawn points)
+		if sym == 'p' {
+			continue
+		}
+
+		if td, ok := map_data.metadata[sym]; ok {
+			if !td.passable {
+				return true
+			}
+		} else {
+			// Unknown tile = blocked
+			return true
+		}
+	}
+
+	return false
+}
+
+update_animation :: proc(player: ^Player, dt: f32) {
+	moving := linalg.length(player.move_dir) > 0.1
+
+	if moving {
+		player.anim_timer += dt
+		if player.anim_timer >= ANIM_FRAME_TIME {
+			player.anim_timer -= ANIM_FRAME_TIME
+			player.current_frame = (player.current_frame + 1) % player.frame_count
+		}
+	} else {
+		player.current_frame = 0
+		player.anim_timer = 0
+	}
+}
+
+draw_player :: proc(player: ^Player, blaster_tex: raylib.Texture2D) {
+	src_w := f32(SPRITE_SRC_SIZE)
+	if player.facing_left {
+		src_w = -src_w
+	}
+
+	src := raylib.Rectangle{
+		x      = f32(player.current_frame * SPRITE_SRC_SIZE),
+		y      = 0,
+		width  = src_w,
+		height = f32(SPRITE_SRC_SIZE),
+	}
+
+	dst := raylib.Rectangle{
+		x      = player.pos.x,
+		y      = player.pos.y,
+		width  = f32(SPRITE_DST_SIZE),
+		height = f32(SPRITE_DST_SIZE),
+	}
+
+	raylib.DrawTexturePro(player.sprite_sheet, src, dst, {0, 0}, 0, raylib.WHITE)
+
+	// Draw blaster if player has it — rotated toward aim direction
+	if player.has_blaster {
+		player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
+		blaster_size: f32 = f32(SPRITE_DST_SIZE) * 0.78
+		angle := player.blaster_angle
+
+		// Flip sprite vertically when aiming left so it doesn't appear upside-down
+		src_h: f32 = 24
+		if angle > 90 || angle < -90 {
+			src_h = -24
+		}
+
+		blaster_src := raylib.Rectangle{0, 0, 24, src_h}
+		blaster_dst := raylib.Rectangle{
+			x      = player_center.x,
+			y      = player_center.y,
+			width  = blaster_size,
+			height = blaster_size,
+		}
+
+		// Origin at left-center: blaster extends outward from player center
+		origin := raylib.Vector2{0, blaster_size / 2}
+		raylib.DrawTexturePro(blaster_tex, blaster_src, blaster_dst, origin, angle, raylib.WHITE)
+	}
+}
+
+check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
+	// Get player center tile coords
+	center_x := int(player.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+	center_y := int(player.pos.y + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+
+	if center_y < 0 || center_y >= map_data.height {
+		return
+	}
+	if center_x < 0 || center_x >= len(map_data.grid[center_y]) {
+		return
+	}
+
+	cell := &map_data.grid[center_y][center_x]
+
+	if td, ok := map_data.metadata[cell.symbol]; ok {
+		if td.collectable && !cell.collected {
+			// Check if it contains a blaster
+			if td.other == "contains_item=blaster" {
+				player.has_blaster = true
+				player.blaster_angle = player.facing_left ? 180.0 : 0.0
+				cell.collected = true
+			}
+		}
+	}
+}
