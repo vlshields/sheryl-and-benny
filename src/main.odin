@@ -24,10 +24,12 @@ Game_State :: struct {
 	enemies:             [MAX_ENEMIES]Enemy,
 	slug_move_tex:       raylib.Texture2D,
 	slug_dead_tex:       raylib.Texture2D,
+	enemies_cleared:     bool,
 	game_over:           bool,
 	game_over_selection: i32,
 	font:                raylib.Font,
 	spawn_pos:           raylib.Vector2,
+	white_flash_shader:  raylib.Shader,
 }
 
 main :: proc() {
@@ -79,6 +81,8 @@ main :: proc() {
 	// Load player sprites
 	p1_tex := raylib.LoadTexture("assets/sprites/player_one_move.png")
 	p2_tex := raylib.LoadTexture("assets/sprites/player_two_move.png")
+	p1_idle_tex := raylib.LoadTexture("assets/sprites/player_one_idle.png")
+	p2_idle_tex := raylib.LoadTexture("assets/sprites/player_two_idle.png")
 	gs.blaster_tex = raylib.LoadTexture("assets/sprites/blaster.png")
 
 	// Load enemy sprites
@@ -88,6 +92,19 @@ main :: proc() {
 	// Load font
 	gs.font = raylib.LoadFontEx("assets/Romulus.ttf", 48, nil, 0)
 	raylib.SetTextureFilter(gs.font.texture, .POINT)
+
+	// Load white flash shader (turns all visible pixels white)
+	WHITE_FLASH_FS :: `#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+uniform sampler2D texture0;
+out vec4 finalColor;
+void main() {
+    vec4 texColor = texture(texture0, fragTexCoord);
+    finalColor = vec4(1.0, 1.0, 1.0, texColor.a);
+}
+`
+	gs.white_flash_shader = raylib.LoadShaderFromMemory(nil, WHITE_FLASH_FS)
 
 	// Find spawn points ('p' tiles)
 	spawn_x: f32 = 0
@@ -111,20 +128,24 @@ main :: proc() {
 
 	// Init P1
 	gs.players[0] = Player {
-		pos          = {spawn_x, spawn_y},
-		sprite_sheet = p1_tex,
-		frame_count  = 4,
-		gamepad_id   = 0,
-		hp           = PLAYER_HP,
+		pos              = {spawn_x, spawn_y},
+		sprite_sheet     = p1_tex,
+		idle_sheet       = p1_idle_tex,
+		frame_count      = 4,
+		idle_frame_count = 5,
+		gamepad_id       = 0,
+		hp               = PLAYER_HP,
 	}
 
 	// Init P2 - offset slightly from P1
 	gs.players[1] = Player {
-		pos          = {spawn_x + f32(TILE_SIZE), spawn_y},
-		sprite_sheet = p2_tex,
-		frame_count  = 2,
-		gamepad_id   = 1,
-		hp           = PLAYER_HP,
+		pos              = {spawn_x + f32(TILE_SIZE), spawn_y},
+		sprite_sheet     = p2_tex,
+		idle_sheet       = p2_idle_tex,
+		frame_count      = 2,
+		idle_frame_count = 4,
+		gamepad_id       = 1,
+		hp               = PLAYER_HP,
 	}
 
 	// P2 AI if no second gamepad
@@ -164,8 +185,10 @@ main :: proc() {
 				}
 			}
 
-			move_and_collide(&gs.players[0], &gs.map_data, dt)
-			move_and_collide(&gs.players[1], &gs.map_data, dt)
+			gs.enemies_cleared = are_enemies_cleared(&gs)
+
+			move_and_collide(&gs.players[0], &gs.map_data, dt, gs.enemies_cleared)
+			move_and_collide(&gs.players[1], &gs.map_data, dt, gs.enemies_cleared)
 
 			update_projectiles(&gs.projectiles, &gs.particles, &gs.map_data, dt)
 			update_particles(&gs.particles, dt)
@@ -228,10 +251,13 @@ main :: proc() {
 
 	raylib.UnloadTexture(p1_tex)
 	raylib.UnloadTexture(p2_tex)
+	raylib.UnloadTexture(p1_idle_tex)
+	raylib.UnloadTexture(p2_idle_tex)
 	raylib.UnloadTexture(gs.blaster_tex)
 	raylib.UnloadTexture(gs.slug_move_tex)
 	raylib.UnloadTexture(gs.slug_dead_tex)
 	raylib.UnloadFont(gs.font)
+	raylib.UnloadShader(gs.white_flash_shader)
 
 	dm.destroy_map(&gs.map_data)
 }
@@ -351,6 +377,7 @@ reset_game :: proc(gs: ^Game_State) {
 	}
 	init_enemies(gs)
 
+	gs.enemies_cleared = false
 	gs.game_over = false
 	gs.game_over_selection = 0
 	update_camera(gs)

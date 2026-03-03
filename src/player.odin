@@ -20,10 +20,13 @@ Player :: struct {
 	aim_dir:             raylib.Vector2,
 	move_dir:            raylib.Vector2,
 	sprite_sheet:        raylib.Texture2D,
+	idle_sheet:          raylib.Texture2D,
 	frame_count:         i32,
+	idle_frame_count:    i32,
 	current_frame:       i32,
 	anim_timer:          f32,
 	facing_left:         bool,
+	moving:              bool,
 	weapon:              Weapon_Kind,
 	blaster_angle:       f32,
 	fire_cooldown:       f32,
@@ -140,18 +143,18 @@ update_blaster_angle :: proc(player: ^Player) {
 	}
 }
 
-move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32) {
+move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemies_cleared: bool) {
 	// Apply and decay knockback
 	if linalg.length(player.knockback_vel) > KNOCKBACK_MIN {
 		kb := player.knockback_vel * dt
 		size := f32(SPRITE_DST_SIZE)
 		inset: f32 = 1.0
 		new_kx := player.pos.x + kb.x
-		if !check_collision(new_kx + inset, player.pos.y + inset, size - inset * 2, size - inset * 2, map_data) {
+		if !check_collision(new_kx + inset, player.pos.y + inset, size - inset * 2, size - inset * 2, map_data, enemies_cleared) {
 			player.pos.x = new_kx
 		}
 		new_ky := player.pos.y + kb.y
-		if !check_collision(player.pos.x + inset, new_ky + inset, size - inset * 2, size - inset * 2, map_data) {
+		if !check_collision(player.pos.x + inset, new_ky + inset, size - inset * 2, size - inset * 2, map_data, enemies_cleared) {
 			player.pos.y = new_ky
 		}
 		player.knockback_vel *= KNOCKBACK_DECAY
@@ -170,13 +173,13 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32) {
 
 	// Try X axis
 	new_x := player.pos.x + velocity.x
-	if !check_collision(new_x + inset, player.pos.y + inset, size - inset * 2, size - inset * 2, map_data) {
+	if !check_collision(new_x + inset, player.pos.y + inset, size - inset * 2, size - inset * 2, map_data, enemies_cleared) {
 		player.pos.x = new_x
 	}
 
 	// Try Y axis
 	new_y := player.pos.y + velocity.y
-	if !check_collision(player.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, map_data) {
+	if !check_collision(player.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, map_data, enemies_cleared) {
 		player.pos.y = new_y
 	}
 
@@ -196,7 +199,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32) {
 	}
 }
 
-check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map) -> bool {
+check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared: bool) -> bool {
 	// Check all four corners of the rect
 	corners := [4]raylib.Vector2{
 		{x, y},
@@ -226,6 +229,9 @@ check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map) -> bool {
 			if !td.passable {
 				return true
 			}
+			if td.condition == "enemies_cleared" && !enemies_cleared {
+				return true
+			}
 		} else {
 			// Unknown tile = blocked
 			return true
@@ -236,21 +242,26 @@ check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map) -> bool {
 }
 
 update_animation :: proc(player: ^Player, dt: f32) {
-	moving := linalg.length(player.move_dir) > 0.1
+	is_moving := linalg.length(player.move_dir) > 0.1
 
-	if moving {
-		player.anim_timer += dt
-		if player.anim_timer >= ANIM_FRAME_TIME {
-			player.anim_timer -= ANIM_FRAME_TIME
-			player.current_frame = (player.current_frame + 1) % player.frame_count
-		}
-	} else {
+	// Reset frame on state transition
+	if is_moving != player.moving {
 		player.current_frame = 0
 		player.anim_timer = 0
+		player.moving = is_moving
+	}
+
+	fc := is_moving ? player.frame_count : player.idle_frame_count
+	player.anim_timer += dt
+	if player.anim_timer >= ANIM_FRAME_TIME {
+		player.anim_timer -= ANIM_FRAME_TIME
+		player.current_frame = (player.current_frame + 1) % fc
 	}
 }
 
 draw_player :: proc(player: ^Player, blaster_tex: raylib.Texture2D) {
+	tex := player.moving ? player.sprite_sheet : player.idle_sheet
+
 	src_w := f32(SPRITE_SRC_SIZE)
 	if player.facing_left {
 		src_w = -src_w
@@ -270,7 +281,7 @@ draw_player :: proc(player: ^Player, blaster_tex: raylib.Texture2D) {
 		height = f32(SPRITE_DST_SIZE),
 	}
 
-	raylib.DrawTexturePro(player.sprite_sheet, src, dst, {0, 0}, 0, raylib.WHITE)
+	raylib.DrawTexturePro(tex, src, dst, {0, 0}, 0, raylib.WHITE)
 
 	// Draw blaster if player has one — rotated toward aim direction
 	if player.weapon != .None {

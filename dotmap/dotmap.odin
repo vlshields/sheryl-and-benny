@@ -20,6 +20,7 @@ Tile_Def :: struct {
 	passable:    bool,
 	collectable: bool,
 	other:       string,
+	condition:   string,
 }
 
 Dot_Map :: struct {
@@ -158,6 +159,7 @@ parse_map :: proc(source: string) -> (Dot_Map, bool) {
 			}
 		}
 
+		td.condition = extract_kv(td.other, "condition")
 		result.metadata[sym] = td
 	}
 
@@ -222,6 +224,25 @@ parse_bool :: proc(p: ^Parser) -> bool {
 	val := read_until_delim(p, {',', '\n', '}'})
 	val = strings.trim_space(val)
 	return val == "true"
+}
+
+extract_kv :: proc(s: string, key: string) -> string {
+	if len(s) == 0 {
+		return ""
+	}
+	parts := strings.split(s, ",")
+	defer delete(parts)
+	for part in parts {
+		trimmed := strings.trim_space(part)
+		eq := strings.index(trimmed, "=")
+		if eq < 0 {
+			continue
+		}
+		if trimmed[:eq] == key {
+			return strings.clone(trimmed[eq + 1:])
+		}
+	}
+	return ""
 }
 
 parse_other_value :: proc(p: ^Parser) -> string {

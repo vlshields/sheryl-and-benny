@@ -10,6 +10,7 @@ ENEMY_SPEED      :: 40.0
 ENEMY_DAMAGE     :: 11
 ENEMY_HP         :: 14
 ENEMY_KNOCKBACK  :: 150.0
+ENEMY_FLASH_TIME :: 0.12
 
 Enemy :: struct {
 	pos:           raylib.Vector2,
@@ -23,6 +24,7 @@ Enemy :: struct {
 	alive:         bool,
 	spawn_timer:   f32,
 	spawned:       bool,
+	flash_timer:   f32,
 }
 
 init_enemies :: proc(gs: ^Game_State) {
@@ -69,6 +71,15 @@ parse_spawn_time :: proc(other: string) -> f32 {
 	return 1.3
 }
 
+are_enemies_cleared :: proc(gs: ^Game_State) -> bool {
+	for &enemy in gs.enemies {
+		if enemy.alive {
+			return false
+		}
+	}
+	return true
+}
+
 update_enemies :: proc(gs: ^Game_State, dt: f32) {
 	any_armed := false
 	for &p in gs.players {
@@ -83,6 +94,10 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			continue
 		}
 
+		if enemy.flash_timer > 0 {
+			enemy.flash_timer -= dt
+		}
+
 		if !enemy.spawned {
 			if !any_armed {
 				continue
@@ -91,6 +106,21 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			if enemy.spawn_timer <= 0 {
 				enemy.spawned = true
 			}
+			continue
+		}
+
+		// Only chase if enemy is within the camera viewport
+		cam := gs.camera
+		view_left := cam.target.x - cam.offset.x / cam.zoom
+		view_right := cam.target.x + cam.offset.x / cam.zoom
+		view_top := cam.target.y - cam.offset.y / cam.zoom
+		view_bottom := cam.target.y + cam.offset.y / cam.zoom
+		size := f32(SPRITE_DST_SIZE)
+
+		in_view := enemy.pos.x + size > view_left && enemy.pos.x < view_right &&
+			enemy.pos.y + size > view_top && enemy.pos.y < view_bottom
+
+		if !in_view {
 			continue
 		}
 
@@ -111,18 +141,17 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 
 		if nearest_dist < 999999 {
 			velocity := nearest_dir * ENEMY_SPEED * dt
-			size := f32(SPRITE_DST_SIZE)
 			inset: f32 = 1.0
 
 			// Try X axis
 			new_x := enemy.pos.x + velocity.x
-			if !check_collision(new_x + inset, enemy.pos.y + inset, size - inset * 2, size - inset * 2, &gs.map_data) {
+			if !check_collision(new_x + inset, enemy.pos.y + inset, size - inset * 2, size - inset * 2, &gs.map_data, false) {
 				enemy.pos.x = new_x
 			}
 
 			// Try Y axis
 			new_y := enemy.pos.y + velocity.y
-			if !check_collision(enemy.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, &gs.map_data) {
+			if !check_collision(enemy.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, &gs.map_data, false) {
 				enemy.pos.y = new_y
 			}
 
@@ -197,6 +226,7 @@ check_projectile_enemy_collision :: proc(gs: ^Game_State) {
 
 			if proj.pos.x >= ex && proj.pos.x <= ex + s && proj.pos.y >= ey && proj.pos.y <= ey + s {
 				enemy.hp -= 6
+				enemy.flash_timer = ENEMY_FLASH_TIME
 				proj.active = false
 				spawn_impact_particles(proj.pos, &gs.particles)
 
@@ -258,6 +288,12 @@ draw_enemies :: proc(gs: ^Game_State) {
 			height = f32(SPRITE_DST_SIZE),
 		}
 
+		if enemy.flash_timer > 0 {
+			raylib.BeginShaderMode(gs.white_flash_shader)
+		}
 		raylib.DrawTexturePro(enemy.sprite_sheet, src, dst, {0, 0}, 0, raylib.WHITE)
+		if enemy.flash_timer > 0 {
+			raylib.EndShaderMode()
+		}
 	}
 }
