@@ -20,13 +20,14 @@ Player :: struct {
 	current_frame: i32,
 	anim_timer:    f32,
 	facing_left:   bool,
-	has_blaster:   bool,
+	weapon:        Weapon_Kind,
 	blaster_angle: f32,
+	fire_cooldown: f32,
 	is_ai:         bool,
 	gamepad_id:    i32,
 }
 
-get_player_input :: proc(player: ^Player, other_player: ^Player, camera: raylib.Camera2D) {
+get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State) {
 	player.move_dir = {0, 0}
 	player.aim_dir = {0, 0}
 
@@ -42,6 +43,12 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, camera: raylib.
 			player.aim_dir = linalg.normalize(diff)
 		}
 		update_blaster_angle(player)
+		// AI fires when aiming at other player and within range
+		if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 && dist < f32(TILE_SIZE) * 8 && dist > 0 {
+			spawn_projectile(player, &gs.projectiles)
+			spawn_muzzle_flash(player, &gs.particles)
+			player.fire_cooldown = FIRE_COOLDOWN
+		}
 		return
 	}
 
@@ -63,6 +70,15 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, camera: raylib.
 		ry := raylib.GetGamepadAxisMovement(player.gamepad_id, .RIGHT_Y)
 		if abs(rx) > STICK_DEADZONE || abs(ry) > STICK_DEADZONE {
 			player.aim_dir = linalg.normalize(raylib.Vector2{rx, ry})
+		}
+
+		// RT to fire
+		if raylib.IsGamepadButtonPressed(player.gamepad_id, .RIGHT_TRIGGER_2) {
+			if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
+				spawn_projectile(player, &gs.projectiles)
+				spawn_muzzle_flash(player, &gs.particles)
+				player.fire_cooldown = FIRE_COOLDOWN
+			}
 		}
 	} else if player.gamepad_id == 0 {
 		// Keyboard fallback for P1 only
@@ -86,12 +102,21 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, camera: raylib.
 
 		// Mouse aim
 		mouse_screen := raylib.GetMousePosition()
-		mouse_world := raylib.GetScreenToWorld2D(mouse_screen, camera)
+		mouse_world := raylib.GetScreenToWorld2D(mouse_screen, gs.camera)
 		player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
 		aim_vec := mouse_world - player_center
 		aim_mag := linalg.length(aim_vec)
 		if aim_mag > 0 {
 			player.aim_dir = aim_vec / aim_mag
+		}
+
+		// Left click to fire
+		if raylib.IsMouseButtonPressed(.LEFT) {
+			if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
+				spawn_projectile(player, &gs.projectiles)
+				spawn_muzzle_flash(player, &gs.particles)
+				player.fire_cooldown = FIRE_COOLDOWN
+			}
 		}
 	}
 
@@ -99,7 +124,7 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, camera: raylib.
 }
 
 update_blaster_angle :: proc(player: ^Player) {
-	if !player.has_blaster {
+	if player.weapon == .None {
 		return
 	}
 	aim_len := linalg.length(player.aim_dir)
@@ -147,7 +172,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32) {
 	} else if player.move_dir.x > 0.1 {
 		player.facing_left = false
 	}
-	if player.has_blaster && player.facing_left != old_facing {
+	if player.weapon != .None && player.facing_left != old_facing {
 		if player.blaster_angle >= 0 {
 			player.blaster_angle = 180 - player.blaster_angle
 		} else {
@@ -232,8 +257,8 @@ draw_player :: proc(player: ^Player, blaster_tex: raylib.Texture2D) {
 
 	raylib.DrawTexturePro(player.sprite_sheet, src, dst, {0, 0}, 0, raylib.WHITE)
 
-	// Draw blaster if player has it — rotated toward aim direction
-	if player.has_blaster {
+	// Draw blaster if player has one — rotated toward aim direction
+	if player.weapon != .None {
 		player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
 		blaster_size: f32 = f32(SPRITE_DST_SIZE) * 0.78
 		angle := player.blaster_angle
@@ -276,7 +301,7 @@ check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 		if td.collectable && !cell.collected {
 			// Check if it contains a blaster
 			if td.other == "contains_item=blaster" {
-				player.has_blaster = true
+				player.weapon = .Blaster
 				player.blaster_angle = player.facing_left ? 180.0 : 0.0
 				cell.collected = true
 			}

@@ -1,0 +1,9 @@
+Day 1 - 5
+
+I originally wanted to make a starfox64 style 3d third person shooter. But I tried
+creating a .obj model in Blender (for the first time) and yeah, no. So I searched 
+for some free assets on https://kenney.nl/ and found some cool 3d spaceworld kits.
+However learning how to make a 3d game in a month without a clear idea of what I 
+even want to do (plus learning webgl) forced me to stick to my comfy zone. I found
+some cute 2d top down asset pack and decided to go with a 2 player twin sick shooter
+called Sheryl and Benny. I hope building it for web wont be too hard!

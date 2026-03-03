@@ -19,6 +19,8 @@ Game_State :: struct {
 	players:       [2]Player,
 	blaster_tex:   raylib.Texture2D,
 	p2_is_ai:      bool,
+	projectiles:   [MAX_PROJECTILES]Projectile,
+	particles:     [MAX_PARTICLES]Particle,
 }
 
 main :: proc() {
@@ -126,11 +128,21 @@ main :: proc() {
 		}
 
 		// Update
-		get_player_input(&gs.players[0], &gs.players[1], gs.camera)
-		get_player_input(&gs.players[1], &gs.players[0], gs.camera)
+		get_player_input(&gs.players[0], &gs.players[1], &gs)
+		get_player_input(&gs.players[1], &gs.players[0], &gs)
+
+		// Decrement fire cooldowns
+		for &p in gs.players {
+			if p.fire_cooldown > 0 {
+				p.fire_cooldown -= dt
+			}
+		}
 
 		move_and_collide(&gs.players[0], &gs.map_data, dt)
 		move_and_collide(&gs.players[1], &gs.map_data, dt)
+
+		update_projectiles(&gs.projectiles, &gs.particles, &gs.map_data, dt)
+		update_particles(&gs.particles, dt)
 
 		update_animation(&gs.players[0], dt)
 		update_animation(&gs.players[1], dt)
@@ -146,8 +158,10 @@ main :: proc() {
 
 		raylib.BeginMode2D(gs.camera)
 		draw_map(&gs)
+		draw_particles(&gs.particles)
 		draw_player(&gs.players[0], gs.blaster_tex)
 		draw_player(&gs.players[1], gs.blaster_tex)
+		draw_projectiles(&gs.projectiles)
 		raylib.EndMode2D()
 
 		raylib.EndDrawing()
