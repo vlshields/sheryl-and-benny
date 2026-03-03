@@ -95,7 +95,7 @@ update_projectiles :: proc(projectiles: ^[MAX_PROJECTILES]Projectile, particles:
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		if sym != 'p' {
+		if sym != 'p' && sym != 'e' {
 			if td, ok := map_data.metadata[sym]; ok {
 				if !td.passable {
 					spawn_impact_particles(proj.pos, particles)

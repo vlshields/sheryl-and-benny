@@ -5,26 +5,33 @@ import dm "../dotmap"
 import "core:math"
 import "core:math/linalg"
 
-PLAYER_SPEED    :: 80.0
-ANIM_FRAME_TIME :: 0.15
-STICK_DEADZONE  :: 0.25
-SPRITE_SRC_SIZE :: 24
-SPRITE_DST_SIZE :: 16
+PLAYER_SPEED              :: 80.0
+ANIM_FRAME_TIME           :: 0.15
+STICK_DEADZONE            :: 0.25
+SPRITE_SRC_SIZE           :: 24
+SPRITE_DST_SIZE           :: 16
+PLAYER_HP                 :: 25
+PLAYER_INVINCIBILITY_TIME :: 0.3
+KNOCKBACK_DECAY           :: 0.9
+KNOCKBACK_MIN             :: 1.0
 
 Player :: struct {
-	pos:           raylib.Vector2,
-	aim_dir:       raylib.Vector2,
-	move_dir:      raylib.Vector2,
-	sprite_sheet:  raylib.Texture2D,
-	frame_count:   i32,
-	current_frame: i32,
-	anim_timer:    f32,
-	facing_left:   bool,
-	weapon:        Weapon_Kind,
-	blaster_angle: f32,
-	fire_cooldown: f32,
-	is_ai:         bool,
-	gamepad_id:    i32,
+	pos:                 raylib.Vector2,
+	aim_dir:             raylib.Vector2,
+	move_dir:            raylib.Vector2,
+	sprite_sheet:        raylib.Texture2D,
+	frame_count:         i32,
+	current_frame:       i32,
+	anim_timer:          f32,
+	facing_left:         bool,
+	weapon:              Weapon_Kind,
+	blaster_angle:       f32,
+	fire_cooldown:       f32,
+	is_ai:               bool,
+	gamepad_id:          i32,
+	hp:                  i32,
+	invincibility_timer: f32,
+	knockback_vel:       raylib.Vector2,
 }
 
 get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State) {
@@ -32,22 +39,11 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 	player.aim_dir = {0, 0}
 
 	if player.is_ai {
-		// Simple AI: move toward the other player if far enough away
+		// Follow the other player, staying about 1 tile away
 		diff := other_player.pos - player.pos
 		dist := linalg.length(diff)
-		if dist > f32(TILE_SIZE) * 2 {
+		if dist > f32(TILE_SIZE) {
 			player.move_dir = linalg.normalize(diff)
-		}
-		// AI aims at the other player
-		if dist > 0 {
-			player.aim_dir = linalg.normalize(diff)
-		}
-		update_blaster_angle(player)
-		// AI fires when aiming at other player and within range
-		if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 && dist < f32(TILE_SIZE) * 8 && dist > 0 {
-			spawn_projectile(player, &gs.projectiles)
-			spawn_muzzle_flash(player, &gs.particles)
-			player.fire_cooldown = FIRE_COOLDOWN
 		}
 		return
 	}
@@ -145,6 +141,25 @@ update_blaster_angle :: proc(player: ^Player) {
 }
 
 move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32) {
+	// Apply and decay knockback
+	if linalg.length(player.knockback_vel) > KNOCKBACK_MIN {
+		kb := player.knockback_vel * dt
+		size := f32(SPRITE_DST_SIZE)
+		inset: f32 = 1.0
+		new_kx := player.pos.x + kb.x
+		if !check_collision(new_kx + inset, player.pos.y + inset, size - inset * 2, size - inset * 2, map_data) {
+			player.pos.x = new_kx
+		}
+		new_ky := player.pos.y + kb.y
+		if !check_collision(player.pos.x + inset, new_ky + inset, size - inset * 2, size - inset * 2, map_data) {
+			player.pos.y = new_ky
+		}
+		player.knockback_vel *= KNOCKBACK_DECAY
+		if linalg.length(player.knockback_vel) < KNOCKBACK_MIN {
+			player.knockback_vel = {0, 0}
+		}
+	}
+
 	if player.move_dir.x == 0 && player.move_dir.y == 0 {
 		return
 	}
@@ -202,8 +217,8 @@ check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map) -> bool {
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		// p tiles are passable (spawn points)
-		if sym == 'p' {
+		// p and e tiles are passable (spawn points)
+		if sym == 'p' || sym == 'e' {
 			continue
 		}
 
