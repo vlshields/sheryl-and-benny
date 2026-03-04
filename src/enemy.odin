@@ -128,7 +128,7 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 		nearest_dist: f32 = 999999
 		nearest_dir: raylib.Vector2
 		for &p in gs.players {
-			if p.hp <= 0 {
+			if p.hp <= 0 || p.is_ai {
 				continue
 			}
 			diff := p.pos - enemy.pos
@@ -182,7 +182,7 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 		}
 
 		for &p in gs.players {
-			if p.hp <= 0 || p.invincibility_timer > 0 {
+			if p.hp <= 0 || p.invincibility_timer > 0 || p.is_ai {
 				continue
 			}
 

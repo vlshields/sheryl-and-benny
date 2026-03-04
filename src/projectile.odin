@@ -10,6 +10,7 @@ PROJECTILE_LIFETIME :: 2.0
 PROJECTILE_RADIUS   :: 2.0
 MAX_PROJECTILES     :: 32
 FIRE_COOLDOWN       :: 0.25
+SHOOT_KNOCKBACK     :: 120.0
 
 MAX_PARTICLES :: 128
 
@@ -53,7 +54,11 @@ get_barrel_tip :: proc(player: ^Player) -> raylib.Vector2 {
 spawn_projectile :: proc(player: ^Player, projectiles: ^[MAX_PROJECTILES]Projectile) {
 	tip := get_barrel_tip(player)
 	angle_rad := player.blaster_angle * (math.PI / 180.0)
-	vel := raylib.Vector2{math.cos(angle_rad), math.sin(angle_rad)} * PROJECTILE_SPEED
+	fire_dir := raylib.Vector2{math.cos(angle_rad), math.sin(angle_rad)}
+	vel := fire_dir * PROJECTILE_SPEED
+
+	// Knockback the player opposite to the fire direction
+	player.knockback_vel += fire_dir * -SHOOT_KNOCKBACK
 
 	for &proj in projectiles {
 		if !proj.active {
