@@ -29,6 +29,8 @@ Game_State :: struct {
 	players:             [2]Player,
 	blaster_tex:         raylib.Texture2D,
 	slinger_tex:         raylib.Texture2D,
+	flamethrower_tex:    raylib.Texture2D,
+	flame_particles:     [MAX_FLAME_PARTICLES]Flame_Particle,
 	p2_is_ai:            bool,
 	projectiles:         [MAX_PROJECTILES]Projectile,
 	particles:           [MAX_PARTICLES]Particle,
@@ -99,6 +101,7 @@ main :: proc() {
 	p2_idle_tex := raylib.LoadTexture("assets/sprites/player_two_idle.png")
 	gs.blaster_tex = raylib.LoadTexture("assets/sprites/blaster.png")
 	gs.slinger_tex = raylib.LoadTexture("assets/sprites/slinger.png")
+	gs.flamethrower_tex = raylib.LoadTexture("assets/sprites/flamethrower.png")
 
 	// Load enemy sprites
 	gs.slug_move_tex = raylib.LoadTexture("assets/sprites/enemy_slug_move.png")
@@ -209,10 +212,12 @@ void main() {
 
 			update_projectiles(&gs.projectiles, &gs.particles, &gs.map_data, dt)
 			update_particles(&gs.particles, dt)
+			update_flame_particles(&gs.flame_particles, dt)
 
 			update_enemies(&gs, dt)
 			check_enemy_player_collision(&gs)
 			check_projectile_enemy_collision(&gs)
+			check_flame_enemy_collision(&gs)
 			check_enemy_projectile_player_collision(&gs)
 
 			update_animation(&gs.players[0], dt)
@@ -254,8 +259,9 @@ void main() {
 		draw_map(&gs)
 		draw_enemies(&gs)
 		draw_particles(&gs.particles)
-		draw_player(&gs.players[0], gs.blaster_tex, gs.slinger_tex)
-		draw_player(&gs.players[1], gs.blaster_tex, gs.slinger_tex)
+		draw_flame_particles(&gs.flame_particles)
+		draw_player(&gs.players[0], gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex)
+		draw_player(&gs.players[1], gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex)
 		draw_projectiles(&gs.projectiles)
 		draw_damage_texts(&gs.damage_texts, gs.font)
 		raylib.EndMode2D()
@@ -282,6 +288,7 @@ void main() {
 	raylib.UnloadTexture(p2_idle_tex)
 	raylib.UnloadTexture(gs.blaster_tex)
 	raylib.UnloadTexture(gs.slinger_tex)
+	raylib.UnloadTexture(gs.flamethrower_tex)
 	raylib.UnloadTexture(gs.slug_move_tex)
 	raylib.UnloadTexture(gs.slug_dead_tex)
 	raylib.UnloadTexture(gs.fly_move_tex)
@@ -393,6 +400,9 @@ reset_game :: proc(gs: ^Game_State) {
 	}
 	for &part in gs.particles {
 		part.active = false
+	}
+	for &fp in gs.flame_particles {
+		fp.active = false
 	}
 
 	// Reset map collected state
@@ -562,6 +572,9 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	}
 	for &part in gs.particles {
 		part.active = false
+	}
+	for &fp in gs.flame_particles {
+		fp.active = false
 	}
 	for &dt in gs.damage_texts {
 		dt.active = false

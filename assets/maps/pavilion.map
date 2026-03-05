@@ -40,7 +40,7 @@ metadata {
         tiles:/home/pots/acjam/assets/tiles/tile_0216.png
           passable:true,
         collectable:true,
-        other: contains_item=slinger
+        other: contains_item=[slinger,flamethrower]
 
     }
 

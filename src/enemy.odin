@@ -38,8 +38,9 @@ Enemy :: struct {
 	alive:         bool,
 	spawn_timer:   f32,
 	spawned:       bool,
-	flash_timer:   f32,
-	fire_cooldown: f32,
+	flash_timer:        f32,
+	fire_cooldown:      f32,
+	flame_damage_timer: f32,
 }
 
 init_enemies :: proc(gs: ^Game_State) {
@@ -129,6 +130,9 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 
 		if enemy.flash_timer > 0 {
 			enemy.flash_timer -= dt
+		}
+		if enemy.flame_damage_timer > 0 {
+			enemy.flame_damage_timer -= dt
 		}
 
 		if !enemy.spawned {

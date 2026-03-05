@@ -3,6 +3,8 @@ package sheryl_and_benny
 import dm "../dotmap"
 import "core:math"
 import "core:math/linalg"
+import "core:math/rand"
+import "core:strings"
 import "vendor:raylib"
 
 PLAYER_SPEED :: 80.0
@@ -79,7 +81,9 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 
 		// RT to fire (held for autofire)
 		if raylib.IsGamepadButtonDown(player.gamepad_id, .RIGHT_TRIGGER_2) {
-			if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
+			if player.weapon == .Flamethrower {
+				spawn_flame_particles(player, &gs.flame_particles)
+			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
@@ -120,7 +124,9 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 
 		// Left click to fire (held for autofire)
 		if raylib.IsMouseButtonDown(.LEFT) {
-			if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
+			if player.weapon == .Flamethrower {
+				spawn_flame_particles(player, &gs.flame_particles)
+			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
@@ -303,6 +309,7 @@ draw_player :: proc(
 	player: ^Player,
 	blaster_tex: raylib.Texture2D,
 	slinger_tex: raylib.Texture2D,
+	flamethrower_tex: raylib.Texture2D,
 ) {
 	tex := player.moving ? player.sprite_sheet : player.idle_sheet
 
@@ -335,6 +342,8 @@ draw_player :: proc(
 			weapon_tex = blaster_tex
 		case .Slinger:
 			weapon_tex = slinger_tex
+		case .Flamethrower:
+			weapon_tex = flamethrower_tex
 		}
 
 		player_center := player.pos + {6, 11}
@@ -384,15 +393,56 @@ check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 
 	if td, ok := map_data.metadata[cell.symbol]; ok {
 		if td.collectable && !cell.collected {
-			if td.other == "contains_item=blaster" {
-				player.weapon = .Blaster
-				player.blaster_angle = player.facing_left ? 180.0 : 0.0
-				cell.collected = true
-			} else if td.other == "contains_item=slinger" {
-				player.weapon = .Slinger
+			weapon := parse_weapon_from_item(td.other)
+			if weapon != .None {
+				player.weapon = weapon
 				player.blaster_angle = player.facing_left ? 180.0 : 0.0
 				cell.collected = true
 			}
 		}
 	}
+}
+
+parse_weapon_from_item :: proc(other: string) -> Weapon_Kind {
+	idx := strings.index(other, "contains_item=")
+	if idx < 0 {
+		return .None
+	}
+	val_start := idx + len("contains_item=")
+	val := other[val_start:]
+
+	// Array format: [item1,item2]
+	if len(val) > 0 && val[0] == '[' {
+		end := strings.index(val, "]")
+		if end < 0 {
+			return .None
+		}
+		items_str := val[1:end]
+		items := strings.split(items_str, ",")
+		defer delete(items)
+		if len(items) == 0 {
+			return .None
+		}
+		pick := rand.int_max(len(items))
+		return weapon_from_name(strings.trim_space(items[pick]))
+	}
+
+	// Single item — trim at comma if more fields follow
+	comma := strings.index(val, ",")
+	if comma >= 0 {
+		val = val[:comma]
+	}
+	return weapon_from_name(strings.trim_space(val))
+}
+
+weapon_from_name :: proc(name: string) -> Weapon_Kind {
+	switch name {
+	case "blaster":
+		return .Blaster
+	case "slinger":
+		return .Slinger
+	case "flamethrower":
+		return .Flamethrower
+	}
+	return .None
 }

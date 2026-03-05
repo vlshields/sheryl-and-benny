@@ -18,12 +18,21 @@ BLASTER_DAMAGE        :: 6
 SLINGER_FIRE_COOLDOWN :: 0.07
 SLINGER_DAMAGE        :: 3
 
+FLAME_DAMAGE        :: 2
+FLAME_DAMAGE_TICK   :: 0.15
+MAX_FLAME_PARTICLES :: 256
+FLAME_SPEED         :: 150.0
+FLAME_LIFETIME      :: 1.3
+FLAME_EMIT_COUNT    :: 5
+FLAME_CONE_SPREAD   :: 0.0873
+
 MAX_PARTICLES :: 128
 
 Weapon_Kind :: enum {
 	None,
 	Blaster,
 	Slinger,
+	Flamethrower,
 }
 
 Projectile :: struct {
@@ -42,6 +51,15 @@ Particle :: struct {
 	max_lifetime: f32,
 	color:        raylib.Color,
 	size:         f32,
+	active:       bool,
+}
+
+Flame_Particle :: struct {
+	pos:          raylib.Vector2,
+	vel:          raylib.Vector2,
+	lifetime:     f32,
+	max_lifetime: f32,
+	radius:       f32,
 	active:       bool,
 }
 
@@ -71,6 +89,8 @@ weapon_damage :: proc(kind: Weapon_Kind) -> i32 {
 		return BLASTER_DAMAGE
 	case .Slinger:
 		return SLINGER_DAMAGE
+	case .Flamethrower:
+		return FLAME_DAMAGE
 	}
 	return 0
 }
@@ -291,5 +311,101 @@ draw_particles :: proc(particles: ^[MAX_PARTICLES]Particle) {
 			u8(f32(part.color.a) * alpha),
 		}
 		raylib.DrawCircleV(part.pos, part.size, c)
+	}
+}
+
+spawn_flame_particles :: proc(player: ^Player, flame_particles: ^[MAX_FLAME_PARTICLES]Flame_Particle) {
+	tip := get_barrel_tip(player)
+	angle_rad := player.blaster_angle * (math.PI / 180.0)
+	base_dir := raylib.Vector2{math.cos(angle_rad), math.sin(angle_rad)}
+
+	for i := 0; i < FLAME_EMIT_COUNT; i += 1 {
+		spread := (rand.float32() - 0.5) * FLAME_CONE_SPREAD * 2
+		cos_s := math.cos(spread)
+		sin_s := math.sin(spread)
+		dir := raylib.Vector2 {
+			base_dir.x * cos_s - base_dir.y * sin_s,
+			base_dir.x * sin_s + base_dir.y * cos_s,
+		}
+
+		speed := FLAME_SPEED * (0.8 + rand.float32() * 0.4)
+		lt := FLAME_LIFETIME * (0.8 + rand.float32() * 0.4)
+
+		for &fp in flame_particles {
+			if !fp.active {
+				fp = Flame_Particle {
+					pos          = tip,
+					vel          = dir * speed,
+					lifetime     = lt,
+					max_lifetime = lt,
+					radius       = 2.5 + rand.float32() * 1.5,
+					active       = true,
+				}
+				break
+			}
+		}
+	}
+}
+
+update_flame_particles :: proc(flame_particles: ^[MAX_FLAME_PARTICLES]Flame_Particle, dt: f32) {
+	for &fp in flame_particles {
+		if !fp.active {
+			continue
+		}
+
+		fp.lifetime -= dt
+		if fp.lifetime <= 0 || fp.radius <= 0.1 {
+			fp.active = false
+			continue
+		}
+
+		fp.pos += fp.vel * dt
+		fp.pos.x += math.cos(fp.lifetime * 20.0) * 0.5
+		fp.radius -= dt * 1.5
+		if fp.radius < 0 {
+			fp.radius = 0
+		}
+	}
+}
+
+draw_flame_particles :: proc(flame_particles: ^[MAX_FLAME_PARTICLES]Flame_Particle) {
+	for &fp in flame_particles {
+		if !fp.active {
+			continue
+		}
+
+		t := 1.0 - (fp.lifetime / fp.max_lifetime)
+		g := u8(255.0 * (1.0 - t))
+		alpha := u8(255.0 * (fp.lifetime / fp.max_lifetime))
+		color := raylib.Color{255, g, 0, alpha}
+		raylib.DrawCircleV(fp.pos, fp.radius, color)
+	}
+}
+
+check_flame_enemy_collision :: proc(gs: ^Game_State) {
+	for &fp in gs.flame_particles {
+		if !fp.active {
+			continue
+		}
+
+		for &enemy in gs.enemies {
+			if !enemy.alive || !enemy.spawned || enemy.flame_damage_timer > 0 {
+				continue
+			}
+
+			ex := enemy.pos.x
+			ey := enemy.pos.y
+			s := f32(SPRITE_DST_SIZE)
+
+			if fp.pos.x >= ex && fp.pos.x <= ex + s && fp.pos.y >= ey && fp.pos.y <= ey + s {
+				enemy.hp -= FLAME_DAMAGE
+				enemy.flash_timer = ENEMY_FLASH_TIME
+				enemy.flame_damage_timer = FLAME_DAMAGE_TICK
+
+				if enemy.hp <= 0 {
+					enemy.alive = false
+				}
+			}
+		}
 	}
 }
