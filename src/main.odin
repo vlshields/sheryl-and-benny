@@ -46,6 +46,7 @@ Game_State :: struct {
 	spawn_pos:           raylib.Vector2,
 	white_flash_shader:  raylib.Shader,
 	damage_texts:        [MAX_DAMAGE_TEXTS]Damage_Text,
+	reticle_tex:         raylib.Texture2D,
 }
 
 main :: proc() {
@@ -108,6 +109,10 @@ main :: proc() {
 	gs.slug_dead_tex = raylib.LoadTexture("assets/sprites/enemy_slug_dead.png")
 	gs.fly_move_tex = raylib.LoadTexture("assets/sprites/enemy_fly_move.png")
 	gs.fly_dead_tex = raylib.LoadTexture("assets/sprites/enemy_fly_dead.png")
+
+	// Load reticle cursor
+	gs.reticle_tex = raylib.LoadTexture("assets/sprites/reticle.png")
+	raylib.HideCursor()
 
 	// Load font
 	gs.font = raylib.LoadFontEx("assets/Romulus.ttf", 48, nil, 0)
@@ -270,6 +275,15 @@ void main() {
 			draw_game_over(&gs)
 		}
 
+		// Draw reticle cursor
+		{
+			RETICLE_SIZE :: 18
+			mouse := raylib.GetMousePosition()
+			src := raylib.Rectangle{0, 0, f32(gs.reticle_tex.width), f32(gs.reticle_tex.height)}
+			dst := raylib.Rectangle{mouse.x - RETICLE_SIZE / 2, mouse.y - RETICLE_SIZE / 2, RETICLE_SIZE, RETICLE_SIZE}
+			raylib.DrawTexturePro(gs.reticle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
+		}
+
 		raylib.EndDrawing()
 	}
 
@@ -293,6 +307,7 @@ void main() {
 	raylib.UnloadTexture(gs.slug_dead_tex)
 	raylib.UnloadTexture(gs.fly_move_tex)
 	raylib.UnloadTexture(gs.fly_dead_tex)
+	raylib.UnloadTexture(gs.reticle_tex)
 	raylib.UnloadFont(gs.font)
 	raylib.UnloadShader(gs.white_flash_shader)
 
