@@ -260,8 +260,8 @@ check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared:
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		// p and e tiles are passable (spawn points)
-		if sym == 'p' || sym == 'e' {
+		// p, e, and f tiles are passable (spawn points)
+		if sym == 'p' || sym == 'e' || sym == 'f' {
 			continue
 		}
 

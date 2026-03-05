@@ -3,6 +3,7 @@ package sheryl_and_benny
 import "vendor:raylib"
 import dm "../dotmap"
 import "core:math"
+import "core:math/linalg"
 import "core:math/rand"
 
 PROJECTILE_SPEED    :: 200.0
@@ -31,6 +32,7 @@ Projectile :: struct {
 	lifetime: f32,
 	damage:   i32,
 	active:   bool,
+	is_enemy: bool,
 }
 
 Particle :: struct {
@@ -132,7 +134,7 @@ update_projectiles :: proc(projectiles: ^[MAX_PROJECTILES]Projectile, particles:
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		if sym != 'p' && sym != 'e' {
+		if sym != 'p' && sym != 'e' && sym != 'f' {
 			if td, ok := map_data.metadata[sym]; ok {
 				if !td.passable {
 					spawn_impact_particles(proj.pos, particles)
@@ -149,7 +151,44 @@ update_projectiles :: proc(projectiles: ^[MAX_PROJECTILES]Projectile, particles:
 draw_projectiles :: proc(projectiles: ^[MAX_PROJECTILES]Projectile) {
 	for &proj in projectiles {
 		if proj.active {
-			raylib.DrawCircleV(proj.pos, PROJECTILE_RADIUS, {255, 220, 50, 255})
+			color: raylib.Color = proj.is_enemy ? {255, 80, 80, 255} : {255, 220, 50, 255}
+			raylib.DrawCircleV(proj.pos, PROJECTILE_RADIUS, color)
+		}
+	}
+}
+
+check_enemy_projectile_player_collision :: proc(gs: ^Game_State) {
+	for &proj in gs.projectiles {
+		if !proj.active || !proj.is_enemy {
+			continue
+		}
+
+		for &p, pi in gs.players {
+			if p.hp <= 0 || p.invincibility_timer > 0 || p.is_ai {
+				continue
+			}
+
+			px := p.pos.x
+			py := p.pos.y
+			s := f32(SPRITE_DST_SIZE)
+
+			if proj.pos.x >= px && proj.pos.x <= px + s && proj.pos.y >= py && proj.pos.y <= py + s {
+				p.hp -= proj.damage
+				p.invincibility_timer = PLAYER_INVINCIBILITY_TIME
+				proj.active = false
+				spawn_impact_particles(proj.pos, &gs.particles)
+
+				if pi == 0 {
+					spawn_damage_text(gs, p.pos, proj.damage)
+				}
+
+				// Knockback from projectile direction
+				vel_len := linalg.length(proj.vel)
+				if vel_len > 0 {
+					p.knockback_vel = linalg.normalize(proj.vel) * FLY_KNOCKBACK
+				}
+				break
+			}
 		}
 	}
 }

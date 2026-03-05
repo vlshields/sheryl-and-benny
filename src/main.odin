@@ -35,6 +35,8 @@ Game_State :: struct {
 	enemies:             [MAX_ENEMIES]Enemy,
 	slug_move_tex:       raylib.Texture2D,
 	slug_dead_tex:       raylib.Texture2D,
+	fly_move_tex:        raylib.Texture2D,
+	fly_dead_tex:        raylib.Texture2D,
 	enemies_cleared:     bool,
 	game_over:           bool,
 	game_over_selection: i32,
@@ -101,6 +103,8 @@ main :: proc() {
 	// Load enemy sprites
 	gs.slug_move_tex = raylib.LoadTexture("assets/sprites/enemy_slug_move.png")
 	gs.slug_dead_tex = raylib.LoadTexture("assets/sprites/enemy_slug_dead.png")
+	gs.fly_move_tex = raylib.LoadTexture("assets/sprites/enemy_fly_move.png")
+	gs.fly_dead_tex = raylib.LoadTexture("assets/sprites/enemy_fly_dead.png")
 
 	// Load font
 	gs.font = raylib.LoadFontEx("assets/Romulus.ttf", 48, nil, 0)
@@ -209,6 +213,7 @@ void main() {
 			update_enemies(&gs, dt)
 			check_enemy_player_collision(&gs)
 			check_projectile_enemy_collision(&gs)
+			check_enemy_projectile_player_collision(&gs)
 
 			update_animation(&gs.players[0], dt)
 			update_animation(&gs.players[1], dt)
@@ -279,6 +284,8 @@ void main() {
 	raylib.UnloadTexture(gs.slinger_tex)
 	raylib.UnloadTexture(gs.slug_move_tex)
 	raylib.UnloadTexture(gs.slug_dead_tex)
+	raylib.UnloadTexture(gs.fly_move_tex)
+	raylib.UnloadTexture(gs.fly_dead_tex)
 	raylib.UnloadFont(gs.font)
 	raylib.UnloadShader(gs.white_flash_shader)
 

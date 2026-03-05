@@ -12,9 +12,23 @@ ENEMY_HP         :: 14
 ENEMY_KNOCKBACK  :: 150.0
 ENEMY_FLASH_TIME :: 0.12
 
+FLY_HP                :: 24
+FLY_SPEED             :: 30.0
+FLY_HOVER_DIST        :: 48.0
+FLY_FIRE_COOLDOWN     :: 2.0
+FLY_PROJECTILE_DAMAGE :: 6
+FLY_PROJECTILE_SPEED  :: 120.0
+FLY_KNOCKBACK         :: 100.0
+
+Enemy_Kind :: enum {
+	Slug,
+	Fly,
+}
+
 Enemy :: struct {
 	pos:           raylib.Vector2,
 	hp:            i32,
+	kind:          Enemy_Kind,
 	sprite_sheet:  raylib.Texture2D,
 	dead_tex:      raylib.Texture2D,
 	frame_count:   i32,
@@ -25,15 +39,21 @@ Enemy :: struct {
 	spawn_timer:   f32,
 	spawned:       bool,
 	flash_timer:   f32,
+	fire_cooldown: f32,
 }
 
 init_enemies :: proc(gs: ^Game_State) {
 	enemy_idx := 0
 
 	// Parse spawn_time_offset from 'e' metadata
-	spawn_time: f32 = 1.3
+	slug_spawn_time: f32 = 1.3
 	if td, ok := gs.map_data.metadata['e']; ok {
-		spawn_time = parse_spawn_time(td.other)
+		slug_spawn_time = parse_spawn_time(td.other)
+	}
+
+	fly_spawn_time: f32 = 1.3
+	if td, ok := gs.map_data.metadata['f']; ok {
+		fly_spawn_time = parse_spawn_time(td.other)
 	}
 
 	for row, y in gs.map_data.grid {
@@ -42,11 +62,24 @@ init_enemies :: proc(gs: ^Game_State) {
 				gs.enemies[enemy_idx] = Enemy {
 					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
 					hp           = ENEMY_HP,
+					kind         = .Slug,
 					sprite_sheet = gs.slug_move_tex,
 					dead_tex     = gs.slug_dead_tex,
 					frame_count  = 2,
 					alive        = true,
-					spawn_timer  = spawn_time,
+					spawn_timer  = slug_spawn_time,
+				}
+				enemy_idx += 1
+			} else if cell.symbol == 'f' && enemy_idx < MAX_ENEMIES {
+				gs.enemies[enemy_idx] = Enemy {
+					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
+					hp           = FLY_HP,
+					kind         = .Fly,
+					sprite_sheet = gs.fly_move_tex,
+					dead_tex     = gs.fly_dead_tex,
+					frame_count  = 2,
+					alive        = true,
+					spawn_timer  = fly_spawn_time,
 				}
 				enemy_idx += 1
 			}
@@ -124,7 +157,7 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			continue
 		}
 
-		// Chase nearest player
+		// Find nearest player
 		nearest_dist: f32 = 999999
 		nearest_dir: raylib.Vector2
 		for &p in gs.players {
@@ -140,19 +173,35 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 		}
 
 		if nearest_dist < 999999 {
-			velocity := nearest_dir * ENEMY_SPEED * dt
-			inset: f32 = 1.0
+			if enemy.kind == .Fly {
+				// Fly: hover near player, stop at hover distance
+				speed: f32 = FLY_SPEED
+				if nearest_dist < FLY_HOVER_DIST {
+					speed = 0
+				}
+				velocity := nearest_dir * speed * dt
+				enemy.pos.x += velocity.x
+				enemy.pos.y += velocity.y
 
-			// Try X axis
-			new_x := enemy.pos.x + velocity.x
-			if !check_collision(new_x + inset, enemy.pos.y + inset, size - inset * 2, size - inset * 2, &gs.map_data, false) {
-				enemy.pos.x = new_x
-			}
+				// Fire projectile at player
+				if enemy.fire_cooldown <= 0 {
+					spawn_enemy_projectile(&enemy, nearest_dir, &gs.projectiles)
+					enemy.fire_cooldown = FLY_FIRE_COOLDOWN
+				}
+			} else {
+				// Slug: chase and collide
+				velocity := nearest_dir * ENEMY_SPEED * dt
+				inset: f32 = 1.0
 
-			// Try Y axis
-			new_y := enemy.pos.y + velocity.y
-			if !check_collision(enemy.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, &gs.map_data, false) {
-				enemy.pos.y = new_y
+				new_x := enemy.pos.x + velocity.x
+				if !check_collision(new_x + inset, enemy.pos.y + inset, size - inset * 2, size - inset * 2, &gs.map_data, false) {
+					enemy.pos.x = new_x
+				}
+
+				new_y := enemy.pos.y + velocity.y
+				if !check_collision(enemy.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, &gs.map_data, false) {
+					enemy.pos.y = new_y
+				}
 			}
 
 			// Update facing
@@ -161,6 +210,10 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			} else if nearest_dir.x > 0.1 {
 				enemy.facing_left = false
 			}
+		}
+
+		if enemy.fire_cooldown > 0 {
+			enemy.fire_cooldown -= dt
 		}
 
 		update_enemy_animation(&enemy, dt)
@@ -175,9 +228,28 @@ update_enemy_animation :: proc(enemy: ^Enemy, dt: f32) {
 	}
 }
 
+spawn_enemy_projectile :: proc(enemy: ^Enemy, dir: raylib.Vector2, projectiles: ^[MAX_PROJECTILES]Projectile) {
+	center := enemy.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
+	vel := dir * FLY_PROJECTILE_SPEED
+
+	for &proj in projectiles {
+		if !proj.active {
+			proj = Projectile {
+				pos      = center,
+				vel      = vel,
+				lifetime = PROJECTILE_LIFETIME,
+				damage   = FLY_PROJECTILE_DAMAGE,
+				active   = true,
+				is_enemy = true,
+			}
+			return
+		}
+	}
+}
+
 check_enemy_player_collision :: proc(gs: ^Game_State) {
 	for &enemy in gs.enemies {
-		if !enemy.alive || !enemy.spawned {
+		if !enemy.alive || !enemy.spawned || enemy.kind == .Fly {
 			continue
 		}
 
@@ -214,7 +286,7 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 
 check_projectile_enemy_collision :: proc(gs: ^Game_State) {
 	for &proj in gs.projectiles {
-		if !proj.active {
+		if !proj.active || proj.is_enemy {
 			continue
 		}
 

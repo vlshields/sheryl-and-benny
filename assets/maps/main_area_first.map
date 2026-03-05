@@ -1,0 +1,79 @@
+MAP_START
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xppwwwwwwwwwwwwwwwwwwgwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwwwwewwwwwwwwwwwwwfwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwgwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwwwwwwwwwwwd
+xwwwwwwgwwgwwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwfwwwwwwwwwwwwwwwewwwwwwwwwwwwwwwwewwwwwwwgwwwwwwwwwwfwwwwwwwwwwwwewwwwwwwwwwwwwwfwwwwwwwwwwwwwwwwwwwwwwwwwwwd
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwgwwwwwwwgwwwwwwwwwwwwwwwwwwfwwwwwwwwwwwwwwwwwwwwwwwwwwgwwwwwwwwwwwwwwwwwwgwwwwwwwwwwewwwwgwwwwwwwwwwfwwwwwwwwwwwwwwwwwwwwwx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+MAP_END
+
+
+metadata {
+
+    x: {
+        tiles: /home/pots/acjam/assets/tiles/tile_0019.png,
+        passable:false,
+        collectable:false,
+        other: nil
+    }
+
+    w: {
+        tiles:[
+
+            /home/pots/acjam/assets/tiles/tile_0065.png,
+            /home/pots/acjam/assets/tiles/tile_0064.png
+        ],
+        passable:true,
+        collectable:false,
+        other: nil
+
+    }
+
+    d: {
+        tiles:/home/pots/acjam/assets/tiles/tile_0140.png,
+          passable:true,
+        collectable:false,
+        other: to_room=main_area_first.map, condition=enemies_cleared
+
+    }
+
+        t: {
+        tiles:/home/pots/acjam/assets/tiles/tile_0216.png
+          passable:true,
+        collectable:true,
+        other: contains_item=slinger
+
+    }
+
+            p: {
+        tiles:nil
+          passable:nil,
+        collectable:nil,
+        other: spawn_point=[player1,player2]
+
+    }
+    e: {
+        tiles:nil
+          passable:true,
+        collectable:nil,
+        other: spawn_point=enemy_slug,spawn_time_offset=1300
+
+    }
+     f: {
+        tiles:nil
+          passable:true,
+        collectable:nil,
+        other: spawn_point=enemy_fly,spawn_time_offset=1300
+
+    }
+
+    g: {
+        tiles:/home/pots/acjam/assets/tiles/tile_0044.png
+          passable:true,
+        collectable:nil,
+        other: nil
+
+    }
+
+
+
+}
