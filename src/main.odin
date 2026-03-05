@@ -28,6 +28,7 @@ Game_State :: struct {
 	camera:              raylib.Camera2D,
 	players:             [2]Player,
 	blaster_tex:         raylib.Texture2D,
+	slinger_tex:         raylib.Texture2D,
 	p2_is_ai:            bool,
 	projectiles:         [MAX_PROJECTILES]Projectile,
 	particles:           [MAX_PARTICLES]Particle,
@@ -95,6 +96,7 @@ main :: proc() {
 	p1_idle_tex := raylib.LoadTexture("assets/sprites/player_one_idle.png")
 	p2_idle_tex := raylib.LoadTexture("assets/sprites/player_two_idle.png")
 	gs.blaster_tex = raylib.LoadTexture("assets/sprites/blaster.png")
+	gs.slinger_tex = raylib.LoadTexture("assets/sprites/slinger.png")
 
 	// Load enemy sprites
 	gs.slug_move_tex = raylib.LoadTexture("assets/sprites/enemy_slug_move.png")
@@ -216,6 +218,12 @@ void main() {
 
 			update_damage_texts(&gs.damage_texts, dt)
 
+			// Check door transition
+			next_map := check_door_transition(&gs)
+			if len(next_map) > 0 {
+				transition_to_map(&gs, next_map)
+			}
+
 			// Check game over
 			for &p in gs.players {
 				if p.hp <= 0 {
@@ -241,8 +249,8 @@ void main() {
 		draw_map(&gs)
 		draw_enemies(&gs)
 		draw_particles(&gs.particles)
-		draw_player(&gs.players[0], gs.blaster_tex)
-		draw_player(&gs.players[1], gs.blaster_tex)
+		draw_player(&gs.players[0], gs.blaster_tex, gs.slinger_tex)
+		draw_player(&gs.players[1], gs.blaster_tex, gs.slinger_tex)
 		draw_projectiles(&gs.projectiles)
 		draw_damage_texts(&gs.damage_texts, gs.font)
 		raylib.EndMode2D()
@@ -268,6 +276,7 @@ void main() {
 	raylib.UnloadTexture(p1_idle_tex)
 	raylib.UnloadTexture(p2_idle_tex)
 	raylib.UnloadTexture(gs.blaster_tex)
+	raylib.UnloadTexture(gs.slinger_tex)
 	raylib.UnloadTexture(gs.slug_move_tex)
 	raylib.UnloadTexture(gs.slug_dead_tex)
 	raylib.UnloadFont(gs.font)
@@ -368,6 +377,7 @@ reset_game :: proc(gs: ^Game_State) {
 		gs.players[i].hp = PLAYER_HP
 		gs.players[i].invincibility_timer = 0
 		gs.players[i].knockback_vel = {0, 0}
+		gs.players[i].blaster_recoil = 0
 	}
 
 	// Clear projectiles and particles
@@ -426,6 +436,138 @@ update_damage_texts :: proc(texts: ^[MAX_DAMAGE_TEXTS]Damage_Text, frame_dt: f32
 			dt.active = false
 		}
 	}
+}
+
+check_door_transition :: proc(gs: ^Game_State) -> string {
+	if !gs.enemies_cleared {
+		return ""
+	}
+
+	for &p in gs.players {
+		center_x := int(p.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+		center_y := int(p.pos.y + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+
+		if center_y < 0 || center_y >= gs.map_data.height {
+			continue
+		}
+		if center_x < 0 || center_x >= len(gs.map_data.grid[center_y]) {
+			continue
+		}
+
+		cell := gs.map_data.grid[center_y][center_x]
+		if td, ok := gs.map_data.metadata[cell.symbol]; ok {
+			if len(td.to_room) > 0 {
+				return td.to_room
+			}
+		}
+	}
+
+	return ""
+}
+
+transition_to_map :: proc(gs: ^Game_State, map_name: string) {
+	// Build path relative to current map directory
+	map_path := strings.concatenate({"assets/maps/", map_name})
+	defer delete(map_path)
+
+	new_map, map_ok := dm.parse_map_file(map_path)
+	if !map_ok {
+		fmt.eprintln("Failed to load map:", map_path)
+		return
+	}
+
+	// Unload old tile textures
+	for _, &textures in gs.tile_textures {
+		for &tex in textures {
+			raylib.UnloadTexture(tex)
+		}
+		delete(textures)
+	}
+	delete(gs.tile_textures)
+
+	// Destroy old map
+	dm.destroy_map(&gs.map_data)
+	gs.map_data = new_map
+
+	// Load new tile textures
+	gs.tile_textures = make(map[u8][dynamic]raylib.Texture2D)
+	for sym, td in gs.map_data.metadata {
+		textures: [dynamic]raylib.Texture2D
+		for path in td.tiles {
+			cpath := strings.clone_to_cstring(path)
+			defer delete(cpath)
+			tex := raylib.LoadTexture(cpath)
+			if tex.id > 0 {
+				append(&textures, tex)
+			} else {
+				fmt.eprintln("Failed to load texture:", path)
+			}
+		}
+		gs.tile_textures[sym] = textures
+	}
+
+	// Assign random tile variants for 'w' cells
+	if w_texs, ok := gs.tile_textures['w']; ok {
+		num_variants := len(w_texs)
+		if num_variants > 1 {
+			for &row in gs.map_data.grid {
+				for &cell in row {
+					if cell.symbol == 'w' {
+						cell.tile_index = rand.int_max(num_variants)
+					}
+				}
+			}
+		}
+	}
+
+	// Find spawn points
+	spawn_x: f32 = 0
+	spawn_y: f32 = 0
+	spawn_found := false
+	for row, y in gs.map_data.grid {
+		for cell, x in row {
+			if cell.symbol == 'p' && !spawn_found {
+				spawn_x = f32(x * TILE_SIZE)
+				spawn_y = f32(y * TILE_SIZE)
+				spawn_found = true
+				break
+			}
+		}
+		if spawn_found {
+			break
+		}
+	}
+
+	gs.spawn_pos = {spawn_x, spawn_y}
+
+	// Reset players to new spawn
+	for i in 0 ..< 2 {
+		gs.players[i].pos = i == 0 ? gs.spawn_pos : gs.spawn_pos + {f32(TILE_SIZE), 0}
+		gs.players[i].move_dir = {0, 0}
+		gs.players[i].current_frame = 0
+		gs.players[i].anim_timer = 0
+		gs.players[i].knockback_vel = {0, 0}
+	}
+
+	// Clear projectiles and particles
+	for &proj in gs.projectiles {
+		proj.active = false
+	}
+	for &part in gs.particles {
+		part.active = false
+	}
+	for &dt in gs.damage_texts {
+		dt.active = false
+	}
+
+	// Re-init enemies
+	for &enemy in gs.enemies {
+		enemy = {}
+	}
+	init_enemies(gs)
+
+	gs.enemies_cleared = false
+	update_camera(gs)
 }
 
 draw_damage_texts :: proc(texts: ^[MAX_DAMAGE_TEXTS]Damage_Text, font: raylib.Font) {

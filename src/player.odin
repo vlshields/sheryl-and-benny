@@ -1,19 +1,21 @@
 package sheryl_and_benny
 
-import "vendor:raylib"
 import dm "../dotmap"
 import "core:math"
 import "core:math/linalg"
+import "vendor:raylib"
 
-PLAYER_SPEED              :: 80.0
-ANIM_FRAME_TIME           :: 0.15
-STICK_DEADZONE            :: 0.25
-SPRITE_SRC_SIZE           :: 24
-SPRITE_DST_SIZE           :: 16
-PLAYER_HP                 :: 25
+PLAYER_SPEED :: 80.0
+ANIM_FRAME_TIME :: 0.15
+STICK_DEADZONE :: 0.25
+SPRITE_SRC_SIZE :: 24
+SPRITE_DST_SIZE :: 16
+PLAYER_HP :: 25
 PLAYER_INVINCIBILITY_TIME :: 0.3
-KNOCKBACK_DECAY           :: 0.9
-KNOCKBACK_MIN             :: 1.0
+KNOCKBACK_DECAY :: 0.9
+KNOCKBACK_MIN :: 1.0
+RECOIL_DECAY :: 0.85
+RECOIL_MIN :: 0.1
 
 Player :: struct {
 	pos:                 raylib.Vector2,
@@ -35,6 +37,7 @@ Player :: struct {
 	hp:                  i32,
 	invincibility_timer: f32,
 	knockback_vel:       raylib.Vector2,
+	blaster_recoil:      f32,
 }
 
 get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State) {
@@ -74,12 +77,12 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 			using_gamepad = true
 		}
 
-		// RT to fire
-		if raylib.IsGamepadButtonPressed(player.gamepad_id, .RIGHT_TRIGGER_2) {
+		// RT to fire (held for autofire)
+		if raylib.IsGamepadButtonDown(player.gamepad_id, .RIGHT_TRIGGER_2) {
 			if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
-				player.fire_cooldown = FIRE_COOLDOWN
+				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 			}
 			using_gamepad = true
 		}
@@ -115,12 +118,12 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 			player.aim_dir = aim_vec / aim_mag
 		}
 
-		// Left click to fire
-		if raylib.IsMouseButtonPressed(.LEFT) {
+		// Left click to fire (held for autofire)
+		if raylib.IsMouseButtonDown(.LEFT) {
 			if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
-				player.fire_cooldown = FIRE_COOLDOWN
+				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 			}
 		}
 	}
@@ -156,16 +159,38 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 		size := f32(SPRITE_DST_SIZE)
 		inset: f32 = 1.0
 		new_kx := player.pos.x + kb.x
-		if !check_collision(new_kx + inset, player.pos.y + inset, size - inset * 2, size - inset * 2, map_data, enemies_cleared) {
+		if !check_collision(
+			new_kx + inset,
+			player.pos.y + inset,
+			size - inset * 2,
+			size - inset * 2,
+			map_data,
+			enemies_cleared,
+		) {
 			player.pos.x = new_kx
 		}
 		new_ky := player.pos.y + kb.y
-		if !check_collision(player.pos.x + inset, new_ky + inset, size - inset * 2, size - inset * 2, map_data, enemies_cleared) {
+		if !check_collision(
+			player.pos.x + inset,
+			new_ky + inset,
+			size - inset * 2,
+			size - inset * 2,
+			map_data,
+			enemies_cleared,
+		) {
 			player.pos.y = new_ky
 		}
 		player.knockback_vel *= KNOCKBACK_DECAY
 		if linalg.length(player.knockback_vel) < KNOCKBACK_MIN {
 			player.knockback_vel = {0, 0}
+		}
+	}
+
+	// Decay blaster recoil
+	if player.blaster_recoil > RECOIL_MIN {
+		player.blaster_recoil *= RECOIL_DECAY
+		if player.blaster_recoil < RECOIL_MIN {
+			player.blaster_recoil = 0
 		}
 	}
 
@@ -179,13 +204,27 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 
 	// Try X axis
 	new_x := player.pos.x + velocity.x
-	if !check_collision(new_x + inset, player.pos.y + inset, size - inset * 2, size - inset * 2, map_data, enemies_cleared) {
+	if !check_collision(
+		new_x + inset,
+		player.pos.y + inset,
+		size - inset * 2,
+		size - inset * 2,
+		map_data,
+		enemies_cleared,
+	) {
 		player.pos.x = new_x
 	}
 
 	// Try Y axis
 	new_y := player.pos.y + velocity.y
-	if !check_collision(player.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, map_data, enemies_cleared) {
+	if !check_collision(
+		player.pos.x + inset,
+		new_y + inset,
+		size - inset * 2,
+		size - inset * 2,
+		map_data,
+		enemies_cleared,
+	) {
 		player.pos.y = new_y
 	}
 
@@ -207,12 +246,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 
 check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared: bool) -> bool {
 	// Check all four corners of the rect
-	corners := [4]raylib.Vector2{
-		{x, y},
-		{x + w, y},
-		{x, y + h},
-		{x + w, y + h},
-	}
+	corners := [4]raylib.Vector2{{x, y}, {x + w, y}, {x, y + h}, {x + w, y + h}}
 
 	for corner in corners {
 		tx := int(corner.x) / TILE_SIZE
@@ -265,7 +299,11 @@ update_animation :: proc(player: ^Player, dt: f32) {
 	}
 }
 
-draw_player :: proc(player: ^Player, blaster_tex: raylib.Texture2D) {
+draw_player :: proc(
+	player: ^Player,
+	blaster_tex: raylib.Texture2D,
+	slinger_tex: raylib.Texture2D,
+) {
 	tex := player.moving ? player.sprite_sheet : player.idle_sheet
 
 	src_w := f32(SPRITE_SRC_SIZE)
@@ -273,14 +311,14 @@ draw_player :: proc(player: ^Player, blaster_tex: raylib.Texture2D) {
 		src_w = -src_w
 	}
 
-	src := raylib.Rectangle{
+	src := raylib.Rectangle {
 		x      = f32(player.current_frame * SPRITE_SRC_SIZE),
 		y      = 0,
 		width  = src_w,
 		height = f32(SPRITE_SRC_SIZE),
 	}
 
-	dst := raylib.Rectangle{
+	dst := raylib.Rectangle {
 		x      = player.pos.x,
 		y      = player.pos.y,
 		width  = f32(SPRITE_DST_SIZE),
@@ -289,11 +327,26 @@ draw_player :: proc(player: ^Player, blaster_tex: raylib.Texture2D) {
 
 	raylib.DrawTexturePro(tex, src, dst, {0, 0}, 0, raylib.WHITE)
 
-	// Draw blaster if player has one — rotated toward aim direction
+	// Draw weapon if player has one — rotated toward aim direction
 	if player.weapon != .None {
-		player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
-		blaster_size: f32 = f32(SPRITE_DST_SIZE) * 0.78
+		weapon_tex: raylib.Texture2D
+		#partial switch player.weapon {
+		case .Blaster:
+			weapon_tex = blaster_tex
+		case .Slinger:
+			weapon_tex = slinger_tex
+		}
+
+		player_center := player.pos + {6, 11}
+		weapon_size: f32 = f32(SPRITE_DST_SIZE) * 0.78
 		angle := player.blaster_angle
+
+		// Apply recoil: pull the weapon back toward the player
+		angle_rad := angle * (math.PI / 180.0)
+		recoil_offset := raylib.Vector2 {
+			math.cos(angle_rad) * -player.blaster_recoil,
+			math.sin(angle_rad) * -player.blaster_recoil,
+		}
 
 		// Flip sprite vertically when aiming left so it doesn't appear upside-down
 		src_h: f32 = 24
@@ -301,17 +354,17 @@ draw_player :: proc(player: ^Player, blaster_tex: raylib.Texture2D) {
 			src_h = -24
 		}
 
-		blaster_src := raylib.Rectangle{0, 0, 24, src_h}
-		blaster_dst := raylib.Rectangle{
-			x      = player_center.x,
-			y      = player_center.y,
-			width  = blaster_size,
-			height = blaster_size,
+		weapon_src := raylib.Rectangle{0, 0, 24, src_h}
+		weapon_dst := raylib.Rectangle {
+			x      = player_center.x + recoil_offset.x,
+			y      = player_center.y + recoil_offset.y,
+			width  = weapon_size,
+			height = weapon_size,
 		}
 
-		// Origin at left-center: blaster extends outward from player center
-		origin := raylib.Vector2{0, blaster_size / 2}
-		raylib.DrawTexturePro(blaster_tex, blaster_src, blaster_dst, origin, angle, raylib.WHITE)
+		// Origin at left-center: weapon extends outward from player center
+		origin := raylib.Vector2{0, weapon_size / 2}
+		raylib.DrawTexturePro(weapon_tex, weapon_src, weapon_dst, origin, angle, raylib.WHITE)
 	}
 }
 
@@ -331,9 +384,12 @@ check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 
 	if td, ok := map_data.metadata[cell.symbol]; ok {
 		if td.collectable && !cell.collected {
-			// Check if it contains a blaster
 			if td.other == "contains_item=blaster" {
 				player.weapon = .Blaster
+				player.blaster_angle = player.facing_left ? 180.0 : 0.0
+				cell.collected = true
+			} else if td.other == "contains_item=slinger" {
+				player.weapon = .Slinger
 				player.blaster_angle = player.facing_left ? 180.0 : 0.0
 				cell.collected = true
 			}

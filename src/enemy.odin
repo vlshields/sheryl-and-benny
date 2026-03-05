@@ -229,7 +229,7 @@ check_projectile_enemy_collision :: proc(gs: ^Game_State) {
 			s := f32(SPRITE_DST_SIZE)
 
 			if proj.pos.x >= ex && proj.pos.x <= ex + s && proj.pos.y >= ey && proj.pos.y <= ey + s {
-				enemy.hp -= 6
+				enemy.hp -= proj.damage
 				enemy.flash_timer = ENEMY_FLASH_TIME
 				proj.active = false
 				spawn_impact_particles(proj.pos, &gs.particles)

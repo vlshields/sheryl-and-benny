@@ -21,6 +21,7 @@ Tile_Def :: struct {
 	collectable: bool,
 	other:       string,
 	condition:   string,
+	to_room:     string,
 }
 
 Dot_Map :: struct {
@@ -160,6 +161,7 @@ parse_map :: proc(source: string) -> (Dot_Map, bool) {
 		}
 
 		td.condition = extract_kv(td.other, "condition")
+		td.to_room = extract_kv(td.other, "to_room")
 		result.metadata[sym] = td
 	}
 

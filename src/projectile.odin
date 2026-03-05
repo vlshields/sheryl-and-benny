@@ -9,20 +9,27 @@ PROJECTILE_SPEED    :: 200.0
 PROJECTILE_LIFETIME :: 2.0
 PROJECTILE_RADIUS   :: 2.0
 MAX_PROJECTILES     :: 32
-FIRE_COOLDOWN       :: 0.25
-SHOOT_KNOCKBACK     :: 120.0
+SHOOT_RECOIL        :: 3.0
+
+BLASTER_FIRE_COOLDOWN :: 0.25
+BLASTER_DAMAGE        :: 6
+
+SLINGER_FIRE_COOLDOWN :: 0.07
+SLINGER_DAMAGE        :: 3
 
 MAX_PARTICLES :: 128
 
 Weapon_Kind :: enum {
 	None,
 	Blaster,
+	Slinger,
 }
 
 Projectile :: struct {
 	pos:      raylib.Vector2,
 	vel:      raylib.Vector2,
 	lifetime: f32,
+	damage:   i32,
 	active:   bool,
 }
 
@@ -40,8 +47,30 @@ weapon_can_shoot :: proc(kind: Weapon_Kind) -> bool {
 	#partial switch kind {
 	case .Blaster:
 		return true
+	case .Slinger:
+		return true
 	}
 	return false
+}
+
+weapon_fire_cooldown :: proc(kind: Weapon_Kind) -> f32 {
+	#partial switch kind {
+	case .Blaster:
+		return BLASTER_FIRE_COOLDOWN
+	case .Slinger:
+		return SLINGER_FIRE_COOLDOWN
+	}
+	return 0
+}
+
+weapon_damage :: proc(kind: Weapon_Kind) -> i32 {
+	#partial switch kind {
+	case .Blaster:
+		return BLASTER_DAMAGE
+	case .Slinger:
+		return SLINGER_DAMAGE
+	}
+	return 0
 }
 
 get_barrel_tip :: proc(player: ^Player) -> raylib.Vector2 {
@@ -57,8 +86,10 @@ spawn_projectile :: proc(player: ^Player, projectiles: ^[MAX_PROJECTILES]Project
 	fire_dir := raylib.Vector2{math.cos(angle_rad), math.sin(angle_rad)}
 	vel := fire_dir * PROJECTILE_SPEED
 
-	// Knockback the player opposite to the fire direction
-	player.knockback_vel += fire_dir * -SHOOT_KNOCKBACK
+	// Recoil the gun sprite backward
+	player.blaster_recoil = SHOOT_RECOIL
+
+	dmg := weapon_damage(player.weapon)
 
 	for &proj in projectiles {
 		if !proj.active {
@@ -66,6 +97,7 @@ spawn_projectile :: proc(player: ^Player, projectiles: ^[MAX_PROJECTILES]Project
 				pos      = tip,
 				vel      = vel,
 				lifetime = PROJECTILE_LIFETIME,
+				damage   = dmg,
 				active   = true,
 			}
 			return
