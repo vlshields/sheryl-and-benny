@@ -1,30 +1,30 @@
 package sheryl_and_benny
 
-import "vendor:raylib"
 import dm "../dotmap"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
+import "vendor:raylib"
 
-PROJECTILE_SPEED    :: 200.0
+PROJECTILE_SPEED :: 200.0
 PROJECTILE_LIFETIME :: 2.0
-PROJECTILE_RADIUS   :: 2.0
-MAX_PROJECTILES     :: 32
-SHOOT_RECOIL        :: 3.0
+PROJECTILE_RADIUS :: 2.0
+MAX_PROJECTILES :: 32
+SHOOT_RECOIL :: 3.0
 
 BLASTER_FIRE_COOLDOWN :: 0.25
-BLASTER_DAMAGE        :: 6
+BLASTER_DAMAGE :: 6
 
 SLINGER_FIRE_COOLDOWN :: 0.07
-SLINGER_DAMAGE        :: 3
+SLINGER_DAMAGE :: 3
 
-FLAME_DAMAGE        :: 2
-FLAME_DAMAGE_TICK   :: 0.15
+FLAME_DAMAGE :: 4
+FLAME_DAMAGE_TICK :: 0.15
 MAX_FLAME_PARTICLES :: 256
-FLAME_SPEED         :: 150.0
-FLAME_LIFETIME      :: 1.3
-FLAME_EMIT_COUNT    :: 5
-FLAME_CONE_SPREAD   :: 0.0873
+FLAME_SPEED :: 150.0
+FLAME_LIFETIME :: 1.3
+FLAME_EMIT_COUNT :: 5
+FLAME_CONE_SPREAD :: 0.0873
 
 MAX_PARTICLES :: 128
 
@@ -99,7 +99,10 @@ get_barrel_tip :: proc(player: ^Player) -> raylib.Vector2 {
 	player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
 	barrel_length: f32 = f32(SPRITE_DST_SIZE) * 0.78
 	angle_rad := player.blaster_angle * (math.PI / 180.0)
-	return player_center + {math.cos(angle_rad) * barrel_length, math.sin(angle_rad) * barrel_length}
+	return(
+		player_center +
+		{math.cos(angle_rad) * barrel_length, math.sin(angle_rad) * barrel_length} \
+	)
 }
 
 spawn_projectile :: proc(player: ^Player, projectiles: ^[MAX_PROJECTILES]Projectile) {
@@ -127,7 +130,12 @@ spawn_projectile :: proc(player: ^Player, projectiles: ^[MAX_PROJECTILES]Project
 	}
 }
 
-update_projectiles :: proc(projectiles: ^[MAX_PROJECTILES]Projectile, particles: ^[MAX_PARTICLES]Particle, map_data: ^dm.Dot_Map, dt: f32) {
+update_projectiles :: proc(
+	projectiles: ^[MAX_PROJECTILES]Projectile,
+	particles: ^[MAX_PARTICLES]Particle,
+	map_data: ^dm.Dot_Map,
+	dt: f32,
+) {
 	for &proj in projectiles {
 		if !proj.active {
 			continue
@@ -192,7 +200,10 @@ check_enemy_projectile_player_collision :: proc(gs: ^Game_State) {
 			py := p.pos.y
 			s := f32(SPRITE_DST_SIZE)
 
-			if proj.pos.x >= px && proj.pos.x <= px + s && proj.pos.y >= py && proj.pos.y <= py + s {
+			if proj.pos.x >= px &&
+			   proj.pos.x <= px + s &&
+			   proj.pos.y >= py &&
+			   proj.pos.y <= py + s {
 				p.hp -= proj.damage
 				p.invincibility_timer = PLAYER_INVINCIBILITY_TIME
 				proj.active = false
@@ -218,18 +229,14 @@ spawn_muzzle_flash :: proc(player: ^Player, particles: ^[MAX_PARTICLES]Particle)
 	angle_rad := player.blaster_angle * (math.PI / 180.0)
 	base_dir := raylib.Vector2{math.cos(angle_rad), math.sin(angle_rad)}
 
-	colors := [3]raylib.Color{
-		{255, 255, 200, 255},
-		{255, 200, 50, 255},
-		{255, 150, 30, 255},
-	}
+	colors := [3]raylib.Color{{255, 255, 200, 255}, {255, 200, 50, 255}, {255, 150, 30, 255}}
 
 	for i := 0; i < 7; i += 1 {
 		// Spread within a cone of ~30 degrees
 		spread := (rand.float32() - 0.5) * 0.5
 		cos_s := math.cos(spread)
 		sin_s := math.sin(spread)
-		dir := raylib.Vector2{
+		dir := raylib.Vector2 {
 			base_dir.x * cos_s - base_dir.y * sin_s,
 			base_dir.x * sin_s + base_dir.y * cos_s,
 		}
@@ -237,23 +244,23 @@ spawn_muzzle_flash :: proc(player: ^Player, particles: ^[MAX_PARTICLES]Particle)
 		speed := 40.0 + rand.float32() * 60.0
 		lt := 0.08 + rand.float32() * 0.07
 
-		spawn_particle(particles, Particle {
-			pos          = tip,
-			vel          = dir * speed,
-			lifetime     = lt,
-			max_lifetime = lt,
-			color        = colors[i % 3],
-			size         = 1.0 + rand.float32() * 1.5,
-			active       = true,
-		})
+		spawn_particle(
+			particles,
+			Particle {
+				pos = tip,
+				vel = dir * speed,
+				lifetime = lt,
+				max_lifetime = lt,
+				color = colors[i % 3],
+				size = 1.0 + rand.float32() * 1.5,
+				active = true,
+			},
+		)
 	}
 }
 
 spawn_impact_particles :: proc(pos: raylib.Vector2, particles: ^[MAX_PARTICLES]Particle) {
-	colors := [2]raylib.Color{
-		{200, 200, 200, 255},
-		{255, 200, 100, 255},
-	}
+	colors := [2]raylib.Color{{200, 200, 200, 255}, {255, 200, 100, 255}}
 
 	for i := 0; i < 5; i += 1 {
 		angle := rand.float32() * math.PI * 2
@@ -261,15 +268,18 @@ spawn_impact_particles :: proc(pos: raylib.Vector2, particles: ^[MAX_PARTICLES]P
 		dir := raylib.Vector2{math.cos(angle), math.sin(angle)}
 		lt := 0.1 + rand.float32() * 0.1
 
-		spawn_particle(particles, Particle {
-			pos          = pos,
-			vel          = dir * speed,
-			lifetime     = lt,
-			max_lifetime = lt,
-			color        = colors[i % 2],
-			size         = 1.0 + rand.float32() * 1.0,
-			active       = true,
-		})
+		spawn_particle(
+			particles,
+			Particle {
+				pos = pos,
+				vel = dir * speed,
+				lifetime = lt,
+				max_lifetime = lt,
+				color = colors[i % 2],
+				size = 1.0 + rand.float32() * 1.0,
+				active = true,
+			},
+		)
 	}
 }
 
@@ -304,17 +314,15 @@ draw_particles :: proc(particles: ^[MAX_PARTICLES]Particle) {
 		}
 
 		alpha := part.lifetime / part.max_lifetime
-		c := raylib.Color{
-			part.color.r,
-			part.color.g,
-			part.color.b,
-			u8(f32(part.color.a) * alpha),
-		}
+		c := raylib.Color{part.color.r, part.color.g, part.color.b, u8(f32(part.color.a) * alpha)}
 		raylib.DrawCircleV(part.pos, part.size, c)
 	}
 }
 
-spawn_flame_particles :: proc(player: ^Player, flame_particles: ^[MAX_FLAME_PARTICLES]Flame_Particle) {
+spawn_flame_particles :: proc(
+	player: ^Player,
+	flame_particles: ^[MAX_FLAME_PARTICLES]Flame_Particle,
+) {
 	tip := get_barrel_tip(player)
 	angle_rad := player.blaster_angle * (math.PI / 180.0)
 	base_dir := raylib.Vector2{math.cos(angle_rad), math.sin(angle_rad)}

@@ -346,7 +346,7 @@ draw_player :: proc(
 			weapon_tex = flamethrower_tex
 		}
 
-		player_center := player.pos + {6, 11}
+		player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, 11}
 		weapon_size: f32 = f32(SPRITE_DST_SIZE) * 0.78
 		angle := player.blaster_angle
 
@@ -371,8 +371,8 @@ draw_player :: proc(
 			height = weapon_size,
 		}
 
-		// Origin at left-center: weapon extends outward from player center
-		origin := raylib.Vector2{0, weapon_size / 2}
+		// Origin at center so weapon looks symmetrical when facing either direction
+		origin := raylib.Vector2{weapon_size / 2, weapon_size / 2}
 		raylib.DrawTexturePro(weapon_tex, weapon_src, weapon_dst, origin, angle, raylib.WHITE)
 	}
 }
