@@ -52,6 +52,7 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 	}
 
 	// Check gamepad
+	using_gamepad := false
 	if raylib.IsGamepadAvailable(player.gamepad_id) {
 		// Left stick for movement
 		lx := raylib.GetGamepadAxisMovement(player.gamepad_id, .LEFT_X)
@@ -62,6 +63,7 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 			if mag > 1.0 {
 				player.move_dir /= mag
 			}
+			using_gamepad = true
 		}
 
 		// Right stick for aiming
@@ -69,6 +71,7 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 		ry := raylib.GetGamepadAxisMovement(player.gamepad_id, .RIGHT_Y)
 		if abs(rx) > STICK_DEADZONE || abs(ry) > STICK_DEADZONE {
 			player.aim_dir = linalg.normalize(raylib.Vector2{rx, ry})
+			using_gamepad = true
 		}
 
 		// RT to fire
@@ -78,8 +81,11 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = FIRE_COOLDOWN
 			}
+			using_gamepad = true
 		}
-	} else if player.gamepad_id == 0 {
+	}
+
+	if !using_gamepad && player.gamepad_id == 0 {
 		// Keyboard fallback for P1 only
 		if raylib.IsKeyDown(.W) {
 			player.move_dir.y -= 1

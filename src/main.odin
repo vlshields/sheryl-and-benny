@@ -6,11 +6,21 @@ import "core:fmt"
 import "core:math/rand"
 import "core:strings"
 
-SCREEN_WIDTH  :: 640
-SCREEN_HEIGHT :: 360
-TILE_SIZE     :: 16
-TARGET_FPS    :: 60
-CAMERA_ZOOM   :: 3.0
+SCREEN_WIDTH      :: 640
+SCREEN_HEIGHT     :: 360
+TILE_SIZE         :: 16
+TARGET_FPS        :: 60
+CAMERA_ZOOM       :: 3.0
+MAX_DAMAGE_TEXTS  :: 8
+DAMAGE_TEXT_SPEED :: 20.0
+DAMAGE_TEXT_TIME  :: 0.8
+
+Damage_Text :: struct {
+	active: bool,
+	pos:    raylib.Vector2,
+	timer:  f32,
+	damage: i32,
+}
 
 Game_State :: struct {
 	map_data:            dm.Dot_Map,
@@ -30,6 +40,7 @@ Game_State :: struct {
 	font:                raylib.Font,
 	spawn_pos:           raylib.Vector2,
 	white_flash_shader:  raylib.Shader,
+	damage_texts:        [MAX_DAMAGE_TEXTS]Damage_Text,
 }
 
 main :: proc() {
@@ -203,6 +214,8 @@ void main() {
 			check_pickup(&gs.players[0], &gs.map_data)
 			check_pickup(&gs.players[1], &gs.map_data)
 
+			update_damage_texts(&gs.damage_texts, dt)
+
 			// Check game over
 			for &p in gs.players {
 				if p.hp <= 0 {
@@ -231,6 +244,7 @@ void main() {
 		draw_player(&gs.players[0], gs.blaster_tex)
 		draw_player(&gs.players[1], gs.blaster_tex)
 		draw_projectiles(&gs.projectiles)
+		draw_damage_texts(&gs.damage_texts, gs.font)
 		raylib.EndMode2D()
 
 		if gs.game_over {
@@ -377,8 +391,55 @@ reset_game :: proc(gs: ^Game_State) {
 	}
 	init_enemies(gs)
 
+	for &dt in gs.damage_texts {
+		dt.active = false
+	}
+
 	gs.enemies_cleared = false
 	gs.game_over = false
 	gs.game_over_selection = 0
 	update_camera(gs)
+}
+
+spawn_damage_text :: proc(gs: ^Game_State, pos: raylib.Vector2, damage: i32) {
+	for &dt in gs.damage_texts {
+		if !dt.active {
+			dt = Damage_Text {
+				active = true,
+				pos    = pos,
+				timer  = DAMAGE_TEXT_TIME,
+				damage = damage,
+			}
+			return
+		}
+	}
+}
+
+update_damage_texts :: proc(texts: ^[MAX_DAMAGE_TEXTS]Damage_Text, frame_dt: f32) {
+	for &dt in texts {
+		if !dt.active {
+			continue
+		}
+		dt.timer -= frame_dt
+		dt.pos.y -= DAMAGE_TEXT_SPEED * frame_dt
+		if dt.timer <= 0 {
+			dt.active = false
+		}
+	}
+}
+
+draw_damage_texts :: proc(texts: ^[MAX_DAMAGE_TEXTS]Damage_Text, font: raylib.Font) {
+	buf: [16]u8
+	for &dt in texts {
+		if !dt.active {
+			continue
+		}
+		alpha := u8(255 * (dt.timer / DAMAGE_TEXT_TIME))
+		text := fmt.bprintf(buf[:], "Player 1 took {} damage", dt.damage)
+		ctext := strings.clone_to_cstring(text, context.temp_allocator)
+		text_size: f32 = 6
+		text_w := raylib.MeasureTextEx(font, ctext, text_size, 0.5).x
+		x := dt.pos.x - text_w / 2 + f32(SPRITE_DST_SIZE) / 2
+		raylib.DrawTextEx(font, ctext, {x, dt.pos.y}, text_size, 0.5, {255, 80, 80, alpha})
+	}
 }

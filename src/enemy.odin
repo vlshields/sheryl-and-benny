@@ -181,7 +181,7 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 			continue
 		}
 
-		for &p in gs.players {
+		for &p, pi in gs.players {
 			if p.hp <= 0 || p.invincibility_timer > 0 || p.is_ai {
 				continue
 			}
@@ -196,6 +196,10 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 			if ex < px + s && ex + s > px && ey < py + s && ey + s > py {
 				p.hp -= ENEMY_DAMAGE
 				p.invincibility_timer = PLAYER_INVINCIBILITY_TIME
+
+				if pi == 0 {
+					spawn_damage_text(gs, p.pos, ENEMY_DAMAGE)
+				}
 
 				// Knockback direction: enemy -> player
 				diff := p.pos - enemy.pos
