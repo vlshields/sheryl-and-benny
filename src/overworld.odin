@@ -78,9 +78,9 @@ update_camera :: proc(gs: ^Game_State) {
 	half_view_w := f32(SCREEN_WIDTH) / (2 * CAMERA_ZOOM)
 	half_view_h := f32(SCREEN_HEIGHT) / (2 * CAMERA_ZOOM)
 
-	// Follow P1
-	target_x := gs.players[0].pos.x + f32(SPRITE_DST_SIZE) / 2
-	target_y := gs.players[0].pos.y + f32(SPRITE_DST_SIZE) / 2
+	// Follow player
+	target_x := gs.player.pos.x + f32(SPRITE_DST_SIZE) / 2
+	target_y := gs.player.pos.y + f32(SPRITE_DST_SIZE) / 2
 
 	// Clamp to map edges
 	if target_x < half_view_w {

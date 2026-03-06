@@ -15,6 +15,11 @@ MAX_DAMAGE_TEXTS  :: 8
 DAMAGE_TEXT_SPEED :: 20.0
 DAMAGE_TEXT_TIME  :: 0.8
 
+Game_Phase :: enum {
+	Character_Select,
+	Playing,
+}
+
 Damage_Text :: struct {
 	active: bool,
 	pos:    raylib.Vector2,
@@ -26,12 +31,11 @@ Game_State :: struct {
 	map_data:            dm.Dot_Map,
 	tile_textures:       map[u8][dynamic]raylib.Texture2D,
 	camera:              raylib.Camera2D,
-	players:             [2]Player,
+	player:              Player,
 	blaster_tex:         raylib.Texture2D,
 	slinger_tex:         raylib.Texture2D,
 	flamethrower_tex:    raylib.Texture2D,
 	flame_particles:     [MAX_FLAME_PARTICLES]Flame_Particle,
-	p2_is_ai:            bool,
 	projectiles:         [MAX_PROJECTILES]Projectile,
 	particles:           [MAX_PARTICLES]Particle,
 	enemies:             [MAX_ENEMIES]Enemy,
@@ -47,6 +51,12 @@ Game_State :: struct {
 	white_flash_shader:  raylib.Shader,
 	damage_texts:        [MAX_DAMAGE_TEXTS]Damage_Text,
 	reticle_tex:         raylib.Texture2D,
+	phase:               Game_Phase,
+	menu_selection:      i32,
+	benny_move_tex:      raylib.Texture2D,
+	benny_idle_tex:      raylib.Texture2D,
+	sheryl_move_tex:     raylib.Texture2D,
+	sheryl_idle_tex:     raylib.Texture2D,
 }
 
 main :: proc() {
@@ -95,11 +105,11 @@ main :: proc() {
 		}
 	}
 
-	// Load player sprites
-	p1_tex := raylib.LoadTexture("assets/sprites/player_one_move.png")
-	p2_tex := raylib.LoadTexture("assets/sprites/player_two_move.png")
-	p1_idle_tex := raylib.LoadTexture("assets/sprites/player_one_idle.png")
-	p2_idle_tex := raylib.LoadTexture("assets/sprites/player_two_idle.png")
+	// Load character sprites
+	gs.benny_move_tex = raylib.LoadTexture("assets/sprites/player_one_move.png")
+	gs.benny_idle_tex = raylib.LoadTexture("assets/sprites/player_one_idle.png")
+	gs.sheryl_move_tex = raylib.LoadTexture("assets/sprites/player_two_move.png")
+	gs.sheryl_idle_tex = raylib.LoadTexture("assets/sprites/player_two_idle.png")
 	gs.blaster_tex = raylib.LoadTexture("assets/sprites/blaster.png")
 	gs.slinger_tex = raylib.LoadTexture("assets/sprites/slinger.png")
 	gs.flamethrower_tex = raylib.LoadTexture("assets/sprites/flamethrower.png")
@@ -131,7 +141,7 @@ void main() {
 `
 	gs.white_flash_shader = raylib.LoadShaderFromMemory(nil, WHITE_FLASH_FS)
 
-	// Find spawn points ('p' tiles)
+	// Find spawn point
 	spawn_x: f32 = 0
 	spawn_y: f32 = 0
 	spawn_found := false
@@ -151,108 +161,71 @@ void main() {
 
 	gs.spawn_pos = {spawn_x, spawn_y}
 
-	// Init P1
-	gs.players[0] = Player {
-		pos              = {spawn_x, spawn_y},
-		sprite_sheet     = p1_tex,
-		idle_sheet       = p1_idle_tex,
-		frame_count      = 4,
-		idle_frame_count = 5,
-		gamepad_id       = 0,
-		hp               = PLAYER_HP,
-	}
-
-	// Init P2 - offset slightly from P1
-	gs.players[1] = Player {
-		pos              = {spawn_x + f32(TILE_SIZE), spawn_y},
-		sprite_sheet     = p2_tex,
-		idle_sheet       = p2_idle_tex,
-		frame_count      = 2,
-		idle_frame_count = 4,
-		gamepad_id       = 1,
-		hp               = PLAYER_HP,
-	}
-
-	// P2 AI if no second gamepad
-	if !raylib.IsGamepadAvailable(1) {
-		gs.players[1].is_ai = true
-		gs.p2_is_ai = true
-	}
-
 	// Init enemies
 	init_enemies(&gs)
 
-	// Init camera
-	update_camera(&gs)
+	// Init camera centered on spawn
+	gs.camera.zoom = CAMERA_ZOOM
+	gs.camera.offset = {f32(SCREEN_WIDTH) / 2, f32(SCREEN_HEIGHT) / 2}
+	gs.camera.target = gs.spawn_pos
 
 	// Game loop
-	for !raylib.WindowShouldClose() {
+	game_loop: for !raylib.WindowShouldClose() {
 		dt := raylib.GetFrameTime()
 
-		// Check if P2 gamepad connected mid-game
-		if gs.p2_is_ai && raylib.IsGamepadAvailable(1) {
-			gs.players[1].is_ai = false
-			gs.p2_is_ai = false
-		}
+		switch gs.phase {
+		case .Character_Select:
+			handle_menu_input(&gs)
 
-		if !gs.game_over {
-			// Update
-			get_player_input(&gs.players[0], &gs.players[1], &gs)
-			get_player_input(&gs.players[1], &gs.players[0], &gs)
+		case .Playing:
+			if !gs.game_over {
+				get_player_input(&gs.player, &gs)
 
-			// Decrement fire and invincibility cooldowns
-			for &p in gs.players {
-				if p.fire_cooldown > 0 {
-					p.fire_cooldown -= dt
+				if gs.player.fire_cooldown > 0 {
+					gs.player.fire_cooldown -= dt
 				}
-				if p.invincibility_timer > 0 {
-					p.invincibility_timer -= dt
+				if gs.player.invincibility_timer > 0 {
+					gs.player.invincibility_timer -= dt
 				}
-			}
 
-			gs.enemies_cleared = are_enemies_cleared(&gs)
+				gs.enemies_cleared = are_enemies_cleared(&gs)
 
-			move_and_collide(&gs.players[0], &gs.map_data, dt, gs.enemies_cleared)
-			move_and_collide(&gs.players[1], &gs.map_data, dt, gs.enemies_cleared)
+				move_and_collide(&gs.player, &gs.map_data, dt, gs.enemies_cleared)
 
-			update_projectiles(&gs.projectiles, &gs.particles, &gs.map_data, dt)
-			update_particles(&gs.particles, dt)
-			update_flame_particles(&gs.flame_particles, dt)
+				update_projectiles(&gs.projectiles, &gs.particles, &gs.map_data, dt)
+				update_particles(&gs.particles, dt)
+				update_flame_particles(&gs.flame_particles, dt)
 
-			update_enemies(&gs, dt)
-			check_enemy_player_collision(&gs)
-			check_projectile_enemy_collision(&gs)
-			check_flame_enemy_collision(&gs)
-			check_enemy_projectile_player_collision(&gs)
+				update_enemies(&gs, dt)
+				check_enemy_player_collision(&gs)
+				check_projectile_enemy_collision(&gs)
+				check_flame_enemy_collision(&gs)
+				check_enemy_projectile_player_collision(&gs)
 
-			update_animation(&gs.players[0], dt)
-			update_animation(&gs.players[1], dt)
+				update_animation(&gs.player, dt)
 
-			check_pickup(&gs.players[0], &gs.map_data)
-			check_pickup(&gs.players[1], &gs.map_data)
+				check_pickup(&gs.player, &gs.map_data)
 
-			update_damage_texts(&gs.damage_texts, dt)
+				update_damage_texts(&gs.damage_texts, dt)
 
-			// Check door transition
-			next_map := check_door_transition(&gs)
-			if len(next_map) > 0 {
-				transition_to_map(&gs, next_map)
-			}
+				// Check door transition
+				next_map := check_door_transition(&gs)
+				if len(next_map) > 0 {
+					transition_to_map(&gs, next_map)
+				}
 
-			// Check game over
-			for &p in gs.players {
-				if p.hp <= 0 {
+				if gs.player.hp <= 0 {
 					gs.game_over = true
 				}
-			}
 
-			update_camera(&gs)
-		} else {
-			action := handle_game_over_input(&gs)
-			if action == 1 {
-				reset_game(&gs)
-			} else if action == 2 {
-				break
+				update_camera(&gs)
+			} else {
+				action := handle_game_over_input(&gs)
+				if action == 1 {
+					reset_game(&gs)
+				} else if action == 2 {
+					break game_loop
+				}
 			}
 		}
 
@@ -260,21 +233,26 @@ void main() {
 		raylib.BeginDrawing()
 		raylib.ClearBackground({20, 16, 30, 255})
 
-		raylib.BeginMode2D(gs.camera)
-		draw_map(&gs)
-		draw_enemies(&gs)
-		draw_particles(&gs.particles)
-		draw_flame_particles(&gs.flame_particles)
-		draw_player(&gs.players[0], gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex)
-		draw_player(&gs.players[1], gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex)
-		draw_projectiles(&gs.projectiles)
-		draw_damage_texts(&gs.damage_texts, gs.font)
-		raylib.EndMode2D()
+		switch gs.phase {
+		case .Character_Select:
+			draw_character_select(&gs)
 
-		draw_hp_bars(&gs.players)
+		case .Playing:
+			raylib.BeginMode2D(gs.camera)
+			draw_map(&gs)
+			draw_enemies(&gs)
+			draw_particles(&gs.particles)
+			draw_flame_particles(&gs.flame_particles)
+			draw_player(&gs.player, gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex)
+			draw_projectiles(&gs.projectiles)
+			draw_damage_texts(&gs.damage_texts, gs.font)
+			raylib.EndMode2D()
 
-		if gs.game_over {
-			draw_game_over(&gs)
+			draw_hp_bar(&gs.player)
+
+			if gs.game_over {
+				draw_game_over(&gs)
+			}
 		}
 
 		// Draw reticle cursor
@@ -298,10 +276,10 @@ void main() {
 	}
 	delete(gs.tile_textures)
 
-	raylib.UnloadTexture(p1_tex)
-	raylib.UnloadTexture(p2_tex)
-	raylib.UnloadTexture(p1_idle_tex)
-	raylib.UnloadTexture(p2_idle_tex)
+	raylib.UnloadTexture(gs.benny_move_tex)
+	raylib.UnloadTexture(gs.benny_idle_tex)
+	raylib.UnloadTexture(gs.sheryl_move_tex)
+	raylib.UnloadTexture(gs.sheryl_idle_tex)
 	raylib.UnloadTexture(gs.blaster_tex)
 	raylib.UnloadTexture(gs.slinger_tex)
 	raylib.UnloadTexture(gs.flamethrower_tex)
@@ -316,25 +294,107 @@ void main() {
 	dm.destroy_map(&gs.map_data)
 }
 
+handle_menu_input :: proc(gs: ^Game_State) {
+	if raylib.IsKeyPressed(.DOWN) || raylib.IsKeyPressed(.S) || raylib.IsKeyPressed(.UP) || raylib.IsKeyPressed(.W) {
+		gs.menu_selection = 1 - gs.menu_selection
+	}
+
+	confirmed := raylib.IsKeyPressed(.ENTER) || raylib.IsKeyPressed(.SPACE)
+
+	if raylib.IsGamepadAvailable(0) {
+		if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) || raylib.IsGamepadButtonPressed(0, .LEFT_FACE_UP) {
+			gs.menu_selection = 1 - gs.menu_selection
+		}
+		if raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) {
+			confirmed = true
+		}
+	}
+
+	if confirmed {
+		init_player(gs)
+		update_camera(gs)
+		gs.phase = .Playing
+	}
+}
+
+init_player :: proc(gs: ^Game_State) {
+	if gs.menu_selection == 0 {
+		// Sheryl
+		gs.player = Player {
+			pos              = gs.spawn_pos,
+			sprite_sheet     = gs.sheryl_move_tex,
+			idle_sheet       = gs.sheryl_idle_tex,
+			frame_count      = 2,
+			idle_frame_count = 4,
+			hp               = PLAYER_HP,
+		}
+	} else {
+		// Benny
+		gs.player = Player {
+			pos              = gs.spawn_pos,
+			sprite_sheet     = gs.benny_move_tex,
+			idle_sheet       = gs.benny_idle_tex,
+			frame_count      = 4,
+			idle_frame_count = 5,
+			hp               = PLAYER_HP,
+		}
+	}
+}
+
+draw_character_select :: proc(gs: ^Game_State) {
+	// Title
+	title_size: f32 = 28
+	title_w := raylib.MeasureTextEx(gs.font, "CHOOSE YOUR CHARACTER", title_size, 1).x
+	title_x := (f32(SCREEN_WIDTH) - title_w) / 2
+	raylib.DrawTextEx(gs.font, "CHOOSE YOUR CHARACTER", {title_x, 60}, title_size, 1, {220, 210, 240, 255})
+
+	option_size: f32 = 22
+	PREVIEW_SIZE :: 48
+
+	// Sheryl
+	{
+		y: f32 = 140
+		color: raylib.Color = gs.menu_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
+		preview_x := f32(SCREEN_WIDTH) / 2 - 60
+		src := raylib.Rectangle{0, 0, f32(SPRITE_SRC_SIZE), f32(SPRITE_SRC_SIZE)}
+		dst := raylib.Rectangle{preview_x, y - 14, PREVIEW_SIZE, PREVIEW_SIZE}
+		raylib.DrawTexturePro(gs.sheryl_idle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
+		name_x := preview_x + PREVIEW_SIZE + 12
+		if gs.menu_selection == 0 {
+			raylib.DrawTextEx(gs.font, ">", {name_x - 18, y}, option_size, 1, color)
+		}
+		raylib.DrawTextEx(gs.font, "SHERYL", {name_x, y}, option_size, 1, color)
+	}
+
+	// Benny
+	{
+		y: f32 = 210
+		color: raylib.Color = gs.menu_selection == 1 ? {255, 220, 50, 255} : {180, 180, 180, 255}
+		preview_x := f32(SCREEN_WIDTH) / 2 - 60
+		src := raylib.Rectangle{0, 0, f32(SPRITE_SRC_SIZE), f32(SPRITE_SRC_SIZE)}
+		dst := raylib.Rectangle{preview_x, y - 14, PREVIEW_SIZE, PREVIEW_SIZE}
+		raylib.DrawTexturePro(gs.benny_idle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
+		name_x := preview_x + PREVIEW_SIZE + 12
+		if gs.menu_selection == 1 {
+			raylib.DrawTextEx(gs.font, ">", {name_x - 18, y}, option_size, 1, color)
+		}
+		raylib.DrawTextEx(gs.font, "BENNY", {name_x, y}, option_size, 1, color)
+	}
+}
+
 // Returns 0=none, 1=restart, 2=quit
 handle_game_over_input :: proc(gs: ^Game_State) -> i32 {
-	// Keyboard navigation
 	if raylib.IsKeyPressed(.DOWN) || raylib.IsKeyPressed(.S) || raylib.IsKeyPressed(.UP) || raylib.IsKeyPressed(.W) {
 		gs.game_over_selection = 1 - gs.game_over_selection
 	}
 
 	confirmed := raylib.IsKeyPressed(.ENTER) || raylib.IsKeyPressed(.SPACE)
 
-	// Gamepad
-	for gp_idx in 0 ..< 2 {
-		gp := i32(gp_idx)
-		if !raylib.IsGamepadAvailable(gp) {
-			continue
-		}
-		if raylib.IsGamepadButtonPressed(gp, .LEFT_FACE_DOWN) || raylib.IsGamepadButtonPressed(gp, .LEFT_FACE_UP) {
+	if raylib.IsGamepadAvailable(0) {
+		if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) || raylib.IsGamepadButtonPressed(0, .LEFT_FACE_UP) {
 			gs.game_over_selection = 1 - gs.game_over_selection
 		}
-		if raylib.IsGamepadButtonPressed(gp, .RIGHT_FACE_DOWN) {
+		if raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) {
 			confirmed = true
 		}
 	}
@@ -394,22 +454,20 @@ draw_game_over :: proc(gs: ^Game_State) {
 }
 
 reset_game :: proc(gs: ^Game_State) {
-	// Reset players — preserve identity fields (sprite_sheet, frame_count, gamepad_id, is_ai)
-	for i in 0 ..< 2 {
-		gs.players[i].pos = i == 0 ? gs.spawn_pos : gs.spawn_pos + {f32(TILE_SIZE), 0}
-		gs.players[i].aim_dir = {0, 0}
-		gs.players[i].move_dir = {0, 0}
-		gs.players[i].current_frame = 0
-		gs.players[i].anim_timer = 0
-		gs.players[i].facing_left = false
-		gs.players[i].weapon = .None
-		gs.players[i].blaster_angle = 0
-		gs.players[i].fire_cooldown = 0
-		gs.players[i].hp = PLAYER_HP
-		gs.players[i].invincibility_timer = 0
-		gs.players[i].knockback_vel = {0, 0}
-		gs.players[i].blaster_recoil = 0
-	}
+	// Reset player — preserve identity fields (sprite_sheet, frame_count, etc.)
+	gs.player.pos = gs.spawn_pos
+	gs.player.aim_dir = {0, 0}
+	gs.player.move_dir = {0, 0}
+	gs.player.current_frame = 0
+	gs.player.anim_timer = 0
+	gs.player.facing_left = false
+	gs.player.weapon = .None
+	gs.player.blaster_angle = 0
+	gs.player.fire_cooldown = 0
+	gs.player.hp = PLAYER_HP
+	gs.player.invincibility_timer = 0
+	gs.player.knockback_vel = {0, 0}
+	gs.player.blaster_recoil = 0
 
 	// Clear projectiles and particles
 	for &proj in gs.projectiles {
@@ -435,8 +493,8 @@ reset_game :: proc(gs: ^Game_State) {
 	}
 	init_enemies(gs)
 
-	for &dt in gs.damage_texts {
-		dt.active = false
+	for &dt_text in gs.damage_texts {
+		dt_text.active = false
 	}
 
 	gs.enemies_cleared = false
@@ -446,9 +504,9 @@ reset_game :: proc(gs: ^Game_State) {
 }
 
 spawn_damage_text :: proc(gs: ^Game_State, pos: raylib.Vector2, damage: i32) {
-	for &dt in gs.damage_texts {
-		if !dt.active {
-			dt = Damage_Text {
+	for &dt_text in gs.damage_texts {
+		if !dt_text.active {
+			dt_text = Damage_Text {
 				active = true,
 				pos    = pos,
 				timer  = DAMAGE_TEXT_TIME,
@@ -460,14 +518,14 @@ spawn_damage_text :: proc(gs: ^Game_State, pos: raylib.Vector2, damage: i32) {
 }
 
 update_damage_texts :: proc(texts: ^[MAX_DAMAGE_TEXTS]Damage_Text, frame_dt: f32) {
-	for &dt in texts {
-		if !dt.active {
+	for &dt_text in texts {
+		if !dt_text.active {
 			continue
 		}
-		dt.timer -= frame_dt
-		dt.pos.y -= DAMAGE_TEXT_SPEED * frame_dt
-		if dt.timer <= 0 {
-			dt.active = false
+		dt_text.timer -= frame_dt
+		dt_text.pos.y -= DAMAGE_TEXT_SPEED * frame_dt
+		if dt_text.timer <= 0 {
+			dt_text.active = false
 		}
 	}
 }
@@ -477,22 +535,20 @@ check_door_transition :: proc(gs: ^Game_State) -> string {
 		return ""
 	}
 
-	for &p in gs.players {
-		center_x := int(p.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
-		center_y := int(p.pos.y + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+	center_x := int(gs.player.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+	center_y := int(gs.player.pos.y + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
 
-		if center_y < 0 || center_y >= gs.map_data.height {
-			continue
-		}
-		if center_x < 0 || center_x >= len(gs.map_data.grid[center_y]) {
-			continue
-		}
+	if center_y < 0 || center_y >= gs.map_data.height {
+		return ""
+	}
+	if center_x < 0 || center_x >= len(gs.map_data.grid[center_y]) {
+		return ""
+	}
 
-		cell := gs.map_data.grid[center_y][center_x]
-		if td, ok := gs.map_data.metadata[cell.symbol]; ok {
-			if len(td.to_room) > 0 {
-				return td.to_room
-			}
+	cell := gs.map_data.grid[center_y][center_x]
+	if td, ok := gs.map_data.metadata[cell.symbol]; ok {
+		if len(td.to_room) > 0 {
+			return td.to_room
 		}
 	}
 
@@ -554,7 +610,7 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 		}
 	}
 
-	// Find spawn points
+	// Find spawn point
 	spawn_x: f32 = 0
 	spawn_y: f32 = 0
 	spawn_found := false
@@ -574,14 +630,12 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 
 	gs.spawn_pos = {spawn_x, spawn_y}
 
-	// Reset players to new spawn
-	for i in 0 ..< 2 {
-		gs.players[i].pos = i == 0 ? gs.spawn_pos : gs.spawn_pos + {f32(TILE_SIZE), 0}
-		gs.players[i].move_dir = {0, 0}
-		gs.players[i].current_frame = 0
-		gs.players[i].anim_timer = 0
-		gs.players[i].knockback_vel = {0, 0}
-	}
+	// Reset player to new spawn
+	gs.player.pos = gs.spawn_pos
+	gs.player.move_dir = {0, 0}
+	gs.player.current_frame = 0
+	gs.player.anim_timer = 0
+	gs.player.knockback_vel = {0, 0}
 
 	// Clear projectiles and particles
 	for &proj in gs.projectiles {
@@ -593,8 +647,8 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	for &fp in gs.flame_particles {
 		fp.active = false
 	}
-	for &dt in gs.damage_texts {
-		dt.active = false
+	for &dt_text in gs.damage_texts {
+		dt_text.active = false
 	}
 
 	// Re-init enemies
@@ -609,16 +663,16 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 
 draw_damage_texts :: proc(texts: ^[MAX_DAMAGE_TEXTS]Damage_Text, font: raylib.Font) {
 	buf: [16]u8
-	for &dt in texts {
-		if !dt.active {
+	for &dt_text in texts {
+		if !dt_text.active {
 			continue
 		}
-		alpha := u8(255 * (dt.timer / DAMAGE_TEXT_TIME))
-		text := fmt.bprintf(buf[:], "Player 1 took {} damage", dt.damage)
+		alpha := u8(255 * (dt_text.timer / DAMAGE_TEXT_TIME))
+		text := fmt.bprintf(buf[:], "{}", dt_text.damage)
 		ctext := strings.clone_to_cstring(text, context.temp_allocator)
 		text_size: f32 = 6
 		text_w := raylib.MeasureTextEx(font, ctext, text_size, 0.5).x
-		x := dt.pos.x - text_w / 2 + f32(SPRITE_DST_SIZE) / 2
-		raylib.DrawTextEx(font, ctext, {x, dt.pos.y}, text_size, 0.5, {255, 80, 80, alpha})
+		x := dt_text.pos.x - text_w / 2 + f32(SPRITE_DST_SIZE) / 2
+		raylib.DrawTextEx(font, ctext, {x, dt_text.pos.y}, text_size, 0.5, {255, 80, 80, alpha})
 	}
 }

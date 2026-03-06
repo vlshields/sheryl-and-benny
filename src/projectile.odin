@@ -186,40 +186,35 @@ draw_projectiles :: proc(projectiles: ^[MAX_PROJECTILES]Projectile) {
 }
 
 check_enemy_projectile_player_collision :: proc(gs: ^Game_State) {
+	if gs.player.hp <= 0 || gs.player.invincibility_timer > 0 {
+		return
+	}
+
+	px := gs.player.pos.x
+	py := gs.player.pos.y
+	s := f32(SPRITE_DST_SIZE)
+
 	for &proj in gs.projectiles {
 		if !proj.active || !proj.is_enemy {
 			continue
 		}
 
-		for &p, pi in gs.players {
-			if p.hp <= 0 || p.invincibility_timer > 0 || p.is_ai {
-				continue
+		if proj.pos.x >= px &&
+		   proj.pos.x <= px + s &&
+		   proj.pos.y >= py &&
+		   proj.pos.y <= py + s {
+			gs.player.hp -= proj.damage
+			gs.player.invincibility_timer = PLAYER_INVINCIBILITY_TIME
+			proj.active = false
+			spawn_impact_particles(proj.pos, &gs.particles)
+			spawn_damage_text(gs, gs.player.pos, proj.damage)
+
+			// Knockback from projectile direction
+			vel_len := linalg.length(proj.vel)
+			if vel_len > 0 {
+				gs.player.knockback_vel = linalg.normalize(proj.vel) * FLY_KNOCKBACK
 			}
-
-			px := p.pos.x
-			py := p.pos.y
-			s := f32(SPRITE_DST_SIZE)
-
-			if proj.pos.x >= px &&
-			   proj.pos.x <= px + s &&
-			   proj.pos.y >= py &&
-			   proj.pos.y <= py + s {
-				p.hp -= proj.damage
-				p.invincibility_timer = PLAYER_INVINCIBILITY_TIME
-				proj.active = false
-				spawn_impact_particles(proj.pos, &gs.particles)
-
-				if pi == 0 {
-					spawn_damage_text(gs, p.pos, proj.damage)
-				}
-
-				// Knockback from projectile direction
-				vel_len := linalg.length(proj.vel)
-				if vel_len > 0 {
-					p.knockback_vel = linalg.normalize(proj.vel) * FLY_KNOCKBACK
-				}
-				break
-			}
+			return
 		}
 	}
 }

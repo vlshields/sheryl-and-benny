@@ -115,13 +115,7 @@ are_enemies_cleared :: proc(gs: ^Game_State) -> bool {
 }
 
 update_enemies :: proc(gs: ^Game_State, dt: f32) {
-	any_armed := false
-	for &p in gs.players {
-		if p.weapon != .None {
-			any_armed = true
-			break
-		}
-	}
+	any_armed := gs.player.weapon != .None
 
 	for &enemy in gs.enemies {
 		if !enemy.alive {
@@ -161,16 +155,13 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			continue
 		}
 
-		// Find nearest player
+		// Chase player
 		nearest_dist: f32 = 999999
 		nearest_dir: raylib.Vector2
-		for &p in gs.players {
-			if p.hp <= 0 || p.is_ai {
-				continue
-			}
-			diff := p.pos - enemy.pos
+		if gs.player.hp > 0 {
+			diff := gs.player.pos - enemy.pos
 			dist := linalg.length(diff)
-			if dist < nearest_dist && dist > 0 {
+			if dist > 0 {
 				nearest_dist = dist
 				nearest_dir = linalg.normalize(diff)
 			}
@@ -252,38 +243,34 @@ spawn_enemy_projectile :: proc(enemy: ^Enemy, dir: raylib.Vector2, projectiles: 
 }
 
 check_enemy_player_collision :: proc(gs: ^Game_State) {
+	if gs.player.hp <= 0 || gs.player.invincibility_timer > 0 {
+		return
+	}
+
 	for &enemy in gs.enemies {
 		if !enemy.alive || !enemy.spawned || enemy.kind == .Fly {
 			continue
 		}
 
-		for &p, pi in gs.players {
-			if p.hp <= 0 || p.invincibility_timer > 0 || p.is_ai {
-				continue
+		// AABB overlap
+		ex := enemy.pos.x
+		ey := enemy.pos.y
+		px := gs.player.pos.x
+		py := gs.player.pos.y
+		s := f32(SPRITE_DST_SIZE)
+
+		if ex < px + s && ex + s > px && ey < py + s && ey + s > py {
+			gs.player.hp -= ENEMY_DAMAGE
+			gs.player.invincibility_timer = PLAYER_INVINCIBILITY_TIME
+			spawn_damage_text(gs, gs.player.pos, ENEMY_DAMAGE)
+
+			// Knockback direction: enemy -> player
+			diff := gs.player.pos - enemy.pos
+			dist := linalg.length(diff)
+			if dist > 0 {
+				gs.player.knockback_vel = linalg.normalize(diff) * ENEMY_KNOCKBACK
 			}
-
-			// AABB overlap
-			ex := enemy.pos.x
-			ey := enemy.pos.y
-			px := p.pos.x
-			py := p.pos.y
-			s := f32(SPRITE_DST_SIZE)
-
-			if ex < px + s && ex + s > px && ey < py + s && ey + s > py {
-				p.hp -= ENEMY_DAMAGE
-				p.invincibility_timer = PLAYER_INVINCIBILITY_TIME
-
-				if pi == 0 {
-					spawn_damage_text(gs, p.pos, ENEMY_DAMAGE)
-				}
-
-				// Knockback direction: enemy -> player
-				diff := p.pos - enemy.pos
-				dist := linalg.length(diff)
-				if dist > 0 {
-					p.knockback_vel = linalg.normalize(diff) * ENEMY_KNOCKBACK
-				}
-			}
+			return
 		}
 	}
 }

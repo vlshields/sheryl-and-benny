@@ -34,34 +34,22 @@ Player :: struct {
 	weapon:              Weapon_Kind,
 	blaster_angle:       f32,
 	fire_cooldown:       f32,
-	is_ai:               bool,
-	gamepad_id:          i32,
 	hp:                  i32,
 	invincibility_timer: f32,
 	knockback_vel:       raylib.Vector2,
 	blaster_recoil:      f32,
 }
 
-get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State) {
+get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 	player.move_dir = {0, 0}
 	player.aim_dir = {0, 0}
 
-	if player.is_ai {
-		// Follow the other player, staying about 1 tile away
-		diff := other_player.pos - player.pos
-		dist := linalg.length(diff)
-		if dist > f32(TILE_SIZE) {
-			player.move_dir = linalg.normalize(diff)
-		}
-		return
-	}
-
 	// Check gamepad
 	using_gamepad := false
-	if raylib.IsGamepadAvailable(player.gamepad_id) {
+	if raylib.IsGamepadAvailable(0) {
 		// Left stick for movement
-		lx := raylib.GetGamepadAxisMovement(player.gamepad_id, .LEFT_X)
-		ly := raylib.GetGamepadAxisMovement(player.gamepad_id, .LEFT_Y)
+		lx := raylib.GetGamepadAxisMovement(0, .LEFT_X)
+		ly := raylib.GetGamepadAxisMovement(0, .LEFT_Y)
 		if abs(lx) > STICK_DEADZONE || abs(ly) > STICK_DEADZONE {
 			player.move_dir = {lx, ly}
 			mag := linalg.length(player.move_dir)
@@ -72,15 +60,15 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 		}
 
 		// Right stick for aiming
-		rx := raylib.GetGamepadAxisMovement(player.gamepad_id, .RIGHT_X)
-		ry := raylib.GetGamepadAxisMovement(player.gamepad_id, .RIGHT_Y)
+		rx := raylib.GetGamepadAxisMovement(0, .RIGHT_X)
+		ry := raylib.GetGamepadAxisMovement(0, .RIGHT_Y)
 		if abs(rx) > STICK_DEADZONE || abs(ry) > STICK_DEADZONE {
 			player.aim_dir = linalg.normalize(raylib.Vector2{rx, ry})
 			using_gamepad = true
 		}
 
 		// RT to fire (held for autofire)
-		if raylib.IsGamepadButtonDown(player.gamepad_id, .RIGHT_TRIGGER_2) {
+		if raylib.IsGamepadButtonDown(0, .RIGHT_TRIGGER_2) {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
@@ -92,8 +80,8 @@ get_player_input :: proc(player: ^Player, other_player: ^Player, gs: ^Game_State
 		}
 	}
 
-	if !using_gamepad && player.gamepad_id == 0 {
-		// Keyboard fallback for P1 only
+	if !using_gamepad {
+		// Keyboard fallback
 		if raylib.IsKeyDown(.W) {
 			player.move_dir.y -= 1
 		}
@@ -377,7 +365,7 @@ draw_player :: proc(
 	}
 }
 
-draw_hp_bars :: proc(players: ^[2]Player) {
+draw_hp_bar :: proc(player: ^Player) {
 	HP_BAR_W: i32 = 120
 	HP_BAR_H: i32 = 14
 	BAR_X: i32 = 10
@@ -385,10 +373,9 @@ draw_hp_bars :: proc(players: ^[2]Player) {
 	border_color := raylib.Color{71, 50, 75, 255}
 	fill_color := raylib.Color{221, 103, 76, 255}
 
-	// P1 only
 	raylib.DrawRectangle(BAR_X - 3, BAR_Y - 3, HP_BAR_W + 6, HP_BAR_H + 6, border_color)
 
-	fill_ratio := f32(players[0].hp) / f32(PLAYER_HP)
+	fill_ratio := f32(player.hp) / f32(PLAYER_HP)
 	if fill_ratio < 0 {
 		fill_ratio = 0
 	}
