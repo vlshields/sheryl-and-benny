@@ -271,6 +271,8 @@ void main() {
 		draw_damage_texts(&gs.damage_texts, gs.font)
 		raylib.EndMode2D()
 
+		draw_hp_bars(&gs.players)
+
 		if gs.game_over {
 			draw_game_over(&gs)
 		}

@@ -377,6 +377,25 @@ draw_player :: proc(
 	}
 }
 
+draw_hp_bars :: proc(players: ^[2]Player) {
+	HP_BAR_W: i32 = 120
+	HP_BAR_H: i32 = 14
+	BAR_X: i32 = 10
+	BAR_Y: i32 = SCREEN_HEIGHT - 24
+	border_color := raylib.Color{71, 50, 75, 255}
+	fill_color := raylib.Color{221, 103, 76, 255}
+
+	// P1 only
+	raylib.DrawRectangle(BAR_X - 3, BAR_Y - 3, HP_BAR_W + 6, HP_BAR_H + 6, border_color)
+
+	fill_ratio := f32(players[0].hp) / f32(PLAYER_HP)
+	if fill_ratio < 0 {
+		fill_ratio = 0
+	}
+	fill_w := i32(f32(HP_BAR_W) * fill_ratio)
+	raylib.DrawRectangle(BAR_X, BAR_Y, fill_w, HP_BAR_H, fill_color)
+}
+
 check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 	// Get player center tile coords
 	center_x := int(player.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
