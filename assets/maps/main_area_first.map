@@ -34,7 +34,7 @@ metadata {
         tiles:/home/pots/acjam/assets/tiles/tile_0140.png,
           passable:true,
         collectable:false,
-        other: to_room=main_area_first.map, condition=enemies_cleared
+        other: to_room=main_area_two.map, condition=enemies_cleared
 
     }
 

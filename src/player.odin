@@ -4,6 +4,7 @@ import dm "../dotmap"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
+import "core:strconv"
 import "core:strings"
 import "vendor:raylib"
 
@@ -12,7 +13,7 @@ ANIM_FRAME_TIME :: 0.15
 STICK_DEADZONE :: 0.25
 SPRITE_SRC_SIZE :: 24
 SPRITE_DST_SIZE :: 16
-PLAYER_HP :: 25
+PLAYER_HP :: 35
 PLAYER_INVINCIBILITY_TIME :: 0.3
 KNOCKBACK_DECAY :: 0.9
 KNOCKBACK_MIN :: 1.0
@@ -38,6 +39,7 @@ Player :: struct {
 	invincibility_timer: f32,
 	knockback_vel:       raylib.Vector2,
 	blaster_recoil:      f32,
+	ammo:                i32,
 }
 
 get_player_input :: proc(player: ^Player, gs: ^Game_State) {
@@ -68,14 +70,22 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 		}
 
 		// RT to fire (held for autofire)
-		if raylib.IsGamepadButtonDown(0, .RIGHT_TRIGGER_2) {
+		if raylib.IsGamepadButtonDown(0, .RIGHT_TRIGGER_2) && player.ammo > 0 {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
+				player.ammo -= 1
 			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
+				player.ammo -= 1
 			}
+			using_gamepad = true
+		}
+
+		// LB to reload
+		if raylib.IsGamepadButtonPressed(0, .LEFT_TRIGGER_1) && player.weapon != .None {
+			player.ammo = weapon_max_ammo(player.weapon)
 			using_gamepad = true
 		}
 	}
@@ -111,14 +121,21 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 		}
 
 		// Left click to fire (held for autofire)
-		if raylib.IsMouseButtonDown(.LEFT) {
+		if raylib.IsMouseButtonDown(.LEFT) && player.ammo > 0 {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
+				player.ammo -= 1
 			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
+				player.ammo -= 1
 			}
+		}
+
+		// Right click to reload
+		if raylib.IsMouseButtonPressed(.RIGHT) && player.weapon != .None {
+			player.ammo = weapon_max_ammo(player.weapon)
 		}
 	}
 
@@ -254,8 +271,8 @@ check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared:
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		// p, e, and f tiles are passable (spawn points)
-		if sym == 'p' || sym == 'e' || sym == 'f' {
+		// p, e, f, and h tiles are passable (spawn points, health pickups)
+		if sym == 'p' || sym == 'e' || sym == 'f' || sym == 'h' {
 			continue
 		}
 
@@ -383,6 +400,36 @@ draw_hp_bar :: proc(player: ^Player) {
 	raylib.DrawRectangle(BAR_X, BAR_Y, fill_w, HP_BAR_H, fill_color)
 }
 
+draw_ammo_display :: proc(player: ^Player, ammo_tex: raylib.Texture2D) {
+	if player.weapon == .None {
+		return
+	}
+
+	per_icon := weapon_ammo_per_icon(player.weapon)
+	icon_count := (player.ammo + per_icon - 1) / per_icon
+	ICON_SIZE :: 10
+	ICON_SPACING :: 2
+	BAR_X: i32 = 10
+	BAR_Y: i32 = SCREEN_HEIGHT - 8
+
+	src := raylib.Rectangle {
+		x      = 0,
+		y      = 0,
+		width  = f32(ammo_tex.width),
+		height = f32(ammo_tex.height),
+	}
+
+	for i: i32 = 0; i < icon_count; i += 1 {
+		dst := raylib.Rectangle {
+			x      = f32(BAR_X + i * (ICON_SIZE + ICON_SPACING)),
+			y      = f32(BAR_Y),
+			width  = ICON_SIZE,
+			height = ICON_SIZE,
+		}
+		raylib.DrawTexturePro(ammo_tex, src, dst, {0, 0}, 0, raylib.WHITE)
+	}
+}
+
 check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 	// Get player center tile coords
 	center_x := int(player.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
@@ -402,11 +449,40 @@ check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 			weapon := parse_weapon_from_item(td.other)
 			if weapon != .None {
 				player.weapon = weapon
+				player.ammo = weapon_max_ammo(weapon)
 				player.blaster_angle = player.facing_left ? 180.0 : 0.0
+				cell.collected = true
+			}
+
+			heal := parse_heal_amount(td.other)
+			if heal > 0 {
+				player.hp = min(player.hp + heal, PLAYER_HP)
 				cell.collected = true
 			}
 		}
 	}
+}
+
+parse_heal_amount :: proc(other: string) -> i32 {
+	idx := strings.index(other, "amount_healed=")
+	if idx < 0 {
+		return 0
+	}
+	val_start := idx + len("amount_healed=")
+	val := other[val_start:]
+
+	// Trim at comma if more fields follow
+	comma := strings.index(val, ",")
+	if comma >= 0 {
+		val = val[:comma]
+	}
+	val = strings.trim_space(val)
+
+	num, ok := strconv.parse_int(val)
+	if !ok {
+		return 0
+	}
+	return i32(num)
 }
 
 parse_weapon_from_item :: proc(other: string) -> Weapon_Kind {
@@ -451,4 +527,28 @@ weapon_from_name :: proc(name: string) -> Weapon_Kind {
 		return .Flamethrower
 	}
 	return .None
+}
+
+weapon_max_ammo :: proc(kind: Weapon_Kind) -> i32 {
+	#partial switch kind {
+	case .Blaster:
+		return BLASTER_MAX_AMMO
+	case .Slinger:
+		return SLINGER_MAX_AMMO
+	case .Flamethrower:
+		return FLAMETHROWER_MAX_AMMO
+	}
+	return 0
+}
+
+weapon_ammo_per_icon :: proc(kind: Weapon_Kind) -> i32 {
+	#partial switch kind {
+	case .Blaster:
+		return 1
+	case .Slinger:
+		return 5
+	case .Flamethrower:
+		return 10
+	}
+	return 1
 }

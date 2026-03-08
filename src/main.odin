@@ -43,6 +43,8 @@ Game_State :: struct {
 	slug_dead_tex:       raylib.Texture2D,
 	fly_move_tex:        raylib.Texture2D,
 	fly_dead_tex:        raylib.Texture2D,
+	bunny_move_tex:      raylib.Texture2D,
+	bunny_dead_tex:      raylib.Texture2D,
 	enemies_cleared:     bool,
 	game_over:           bool,
 	game_over_selection: i32,
@@ -51,6 +53,7 @@ Game_State :: struct {
 	white_flash_shader:  raylib.Shader,
 	damage_texts:        [MAX_DAMAGE_TEXTS]Damage_Text,
 	reticle_tex:         raylib.Texture2D,
+	ammo_tex:            raylib.Texture2D,
 	phase:               Game_Phase,
 	menu_selection:      i32,
 	benny_move_tex:      raylib.Texture2D,
@@ -119,9 +122,12 @@ main :: proc() {
 	gs.slug_dead_tex = raylib.LoadTexture("assets/sprites/enemy_slug_dead.png")
 	gs.fly_move_tex = raylib.LoadTexture("assets/sprites/enemy_fly_move.png")
 	gs.fly_dead_tex = raylib.LoadTexture("assets/sprites/enemy_fly_dead.png")
+	gs.bunny_move_tex = raylib.LoadTexture("assets/sprites/enemy_crazy_bunny_move.png")
+	gs.bunny_dead_tex = raylib.LoadTexture("assets/sprites/enemy_crazy_bunny_dead.png")
 
 	// Load reticle cursor
 	gs.reticle_tex = raylib.LoadTexture("assets/sprites/reticle.png")
+	gs.ammo_tex = raylib.LoadTexture("assets/sprites/ammo.png")
 	raylib.HideCursor()
 
 	// Load font
@@ -249,6 +255,7 @@ void main() {
 			raylib.EndMode2D()
 
 			draw_hp_bar(&gs.player)
+			draw_ammo_display(&gs.player, gs.ammo_tex)
 
 			if gs.game_over {
 				draw_game_over(&gs)
@@ -287,7 +294,10 @@ void main() {
 	raylib.UnloadTexture(gs.slug_dead_tex)
 	raylib.UnloadTexture(gs.fly_move_tex)
 	raylib.UnloadTexture(gs.fly_dead_tex)
+	raylib.UnloadTexture(gs.bunny_move_tex)
+	raylib.UnloadTexture(gs.bunny_dead_tex)
 	raylib.UnloadTexture(gs.reticle_tex)
+	raylib.UnloadTexture(gs.ammo_tex)
 	raylib.UnloadFont(gs.font)
 	raylib.UnloadShader(gs.white_flash_shader)
 
@@ -462,6 +472,7 @@ reset_game :: proc(gs: ^Game_State) {
 	gs.player.anim_timer = 0
 	gs.player.facing_left = false
 	gs.player.weapon = .None
+	gs.player.ammo = 0
 	gs.player.blaster_angle = 0
 	gs.player.fire_cooldown = 0
 	gs.player.hp = PLAYER_HP

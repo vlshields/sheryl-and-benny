@@ -5,7 +5,7 @@ import "core:math/linalg"
 import "core:strings"
 import "core:strconv"
 
-MAX_ENEMIES      :: 16
+MAX_ENEMIES      :: 24
 ENEMY_SPEED      :: 40.0
 ENEMY_DAMAGE     :: 11
 ENEMY_HP         :: 14
@@ -17,12 +17,16 @@ FLY_SPEED             :: 30.0
 FLY_HOVER_DIST        :: 48.0
 FLY_FIRE_COOLDOWN     :: 2.0
 FLY_PROJECTILE_DAMAGE :: 6
-FLY_PROJECTILE_SPEED  :: 120.0
+FLY_PROJECTILE_SPEED  :: 70.0
 FLY_KNOCKBACK         :: 100.0
+
+CRAZY_BUNNY_HP    :: ENEMY_HP
+CRAZY_BUNNY_SPEED :: 55.0
 
 Enemy_Kind :: enum {
 	Slug,
 	Fly,
+	Crazy_Bunny,
 }
 
 Enemy :: struct {
@@ -41,6 +45,7 @@ Enemy :: struct {
 	flash_timer:        f32,
 	fire_cooldown:      f32,
 	flame_damage_timer: f32,
+	activated:          bool,
 }
 
 init_enemies :: proc(gs: ^Game_State) {
@@ -57,6 +62,11 @@ init_enemies :: proc(gs: ^Game_State) {
 		fly_spawn_time = parse_spawn_time(td.other)
 	}
 
+	bunny_spawn_time: f32 = 1.3
+	if td, ok := gs.map_data.metadata['c']; ok {
+		bunny_spawn_time = parse_spawn_time(td.other)
+	}
+
 	for row, y in gs.map_data.grid {
 		for cell, x in row {
 			if cell.symbol == 'e' && enemy_idx < MAX_ENEMIES {
@@ -69,6 +79,18 @@ init_enemies :: proc(gs: ^Game_State) {
 					frame_count  = 2,
 					alive        = true,
 					spawn_timer  = slug_spawn_time,
+				}
+				enemy_idx += 1
+			} else if cell.symbol == 'c' && enemy_idx < MAX_ENEMIES {
+				gs.enemies[enemy_idx] = Enemy {
+					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
+					hp           = CRAZY_BUNNY_HP,
+					kind         = .Crazy_Bunny,
+					sprite_sheet = gs.bunny_move_tex,
+					dead_tex     = gs.bunny_dead_tex,
+					frame_count  = 3,
+					alive        = true,
+					spawn_timer  = bunny_spawn_time,
 				}
 				enemy_idx += 1
 			} else if cell.symbol == 'f' && enemy_idx < MAX_ENEMIES {
@@ -140,19 +162,23 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			continue
 		}
 
-		// Only chase if enemy is within the camera viewport
-		cam := gs.camera
-		view_left := cam.target.x - cam.offset.x / cam.zoom
-		view_right := cam.target.x + cam.offset.x / cam.zoom
-		view_top := cam.target.y - cam.offset.y / cam.zoom
-		view_bottom := cam.target.y + cam.offset.y / cam.zoom
 		size := f32(SPRITE_DST_SIZE)
 
-		in_view := enemy.pos.x + size > view_left && enemy.pos.x < view_right &&
-			enemy.pos.y + size > view_top && enemy.pos.y < view_bottom
+		// Activate enemy when first seen in the camera viewport
+		if !enemy.activated {
+			cam := gs.camera
+			view_left := cam.target.x - cam.offset.x / cam.zoom
+			view_right := cam.target.x + cam.offset.x / cam.zoom
+			view_top := cam.target.y - cam.offset.y / cam.zoom
+			view_bottom := cam.target.y + cam.offset.y / cam.zoom
 
-		if !in_view {
-			continue
+			in_view := enemy.pos.x + size > view_left && enemy.pos.x < view_right &&
+				enemy.pos.y + size > view_top && enemy.pos.y < view_bottom
+
+			if !in_view {
+				continue
+			}
+			enemy.activated = true
 		}
 
 		// Chase player
@@ -184,8 +210,9 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 					enemy.fire_cooldown = FLY_FIRE_COOLDOWN
 				}
 			} else {
-				// Slug: chase and collide
-				velocity := nearest_dir * ENEMY_SPEED * dt
+				// Slug / Crazy_Bunny: chase and collide
+				speed: f32 = enemy.kind == .Crazy_Bunny ? CRAZY_BUNNY_SPEED : ENEMY_SPEED
+				velocity := nearest_dir * speed * dt
 				inset: f32 = 1.0
 
 				new_x := enemy.pos.x + velocity.x
