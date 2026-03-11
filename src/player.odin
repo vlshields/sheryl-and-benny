@@ -579,6 +579,29 @@ check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {
 	return false
 }
 
+player_near_door :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {
+	center_x := int(player.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+	center_y := int(player.pos.y + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+
+	// Check the player's tile and all 8 neighbors
+	for dy := -1; dy <= 1; dy += 1 {
+		for dx := -1; dx <= 1; dx += 1 {
+			ty := center_y + dy
+			tx := center_x + dx
+			if ty < 0 || ty >= map_data.height || tx < 0 || tx >= len(map_data.grid[ty]) {
+				continue
+			}
+			cell := map_data.grid[ty][tx]
+			if td, ok := map_data.metadata[cell.symbol]; ok {
+				if strings.contains(td.condition, "has_key") {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 weapon_ammo_per_icon :: proc(kind: Weapon_Kind) -> i32 {
 	#partial switch kind {
 	case .Blaster:

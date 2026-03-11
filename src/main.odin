@@ -227,11 +227,13 @@ void main() {
 					gs.door_locked_msg_timer -= dt
 				}
 
-				// Unlock door when conditions met
+				// Unlock door when player reaches it with key and enemies cleared
 				if !gs.door_unlocked && gs.enemies_cleared && gs.player.has_key {
-					gs.door_unlocked = true
-					gs.door_anim_timer = 0
-					gs.door_anim_frame = 0
+					if player_near_door(&gs.player, &gs.map_data) {
+						gs.door_unlocked = true
+						gs.door_anim_timer = 0
+						gs.door_anim_frame = 0
+					}
 				}
 
 				// Update door open animation
