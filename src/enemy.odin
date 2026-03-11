@@ -1,47 +1,49 @@
 package sheryl_and_benny
 
-import "vendor:raylib"
 import "core:math/linalg"
-import "core:strings"
+import "core:math/rand"
 import "core:strconv"
+import "core:strings"
+import "vendor:raylib"
 
-MAX_ENEMIES      :: 24
-ENEMY_SPEED      :: 40.0
-ENEMY_DAMAGE     :: 11
-ENEMY_HP         :: 14
-ENEMY_KNOCKBACK  :: 150.0
+MAX_ENEMIES :: 24
+ENEMY_SPEED :: 40.0
+ENEMY_DAMAGE :: 7
+ENEMY_HP :: 14
+ENEMY_KNOCKBACK :: 150.0
 ENEMY_FLASH_TIME :: 0.12
 
-FLY_HP                :: 24
-FLY_SPEED             :: 30.0
-FLY_HOVER_DIST        :: 48.0
-FLY_FIRE_COOLDOWN     :: 2.0
+FLY_HP :: 24
+FLY_SPEED :: 30.0
+FLY_HOVER_DIST :: 48.0
+FLY_FIRE_COOLDOWN :: 2.0
 FLY_PROJECTILE_DAMAGE :: 6
-FLY_PROJECTILE_SPEED  :: 70.0
-FLY_KNOCKBACK         :: 100.0
+FLY_PROJECTILE_SPEED :: 70.0
+FLY_KNOCKBACK :: 100.0
 
-CRAZY_BUNNY_HP    :: ENEMY_HP
+CRAZY_BUNNY_HP :: ENEMY_HP
 CRAZY_BUNNY_SPEED :: 55.0
 
 Enemy_Kind :: enum {
 	Slug,
 	Fly,
 	Crazy_Bunny,
+	Boss,
 }
 
 Enemy :: struct {
-	pos:           raylib.Vector2,
-	hp:            i32,
-	kind:          Enemy_Kind,
-	sprite_sheet:  raylib.Texture2D,
-	dead_tex:      raylib.Texture2D,
-	frame_count:   i32,
-	current_frame: i32,
-	anim_timer:    f32,
-	facing_left:   bool,
-	alive:         bool,
-	spawn_timer:   f32,
-	spawned:       bool,
+	pos:                raylib.Vector2,
+	hp:                 i32,
+	kind:               Enemy_Kind,
+	sprite_sheet:       raylib.Texture2D,
+	dead_tex:           raylib.Texture2D,
+	frame_count:        i32,
+	current_frame:      i32,
+	anim_timer:         f32,
+	facing_left:        bool,
+	alive:              bool,
+	spawn_timer:        f32,
+	spawned:            bool,
 	flash_timer:        f32,
 	fire_cooldown:      f32,
 	flame_damage_timer: f32,
@@ -144,6 +146,17 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			continue
 		}
 
+		// Boss is updated separately by arena wave system
+		if enemy.kind == .Boss {
+			if enemy.flash_timer > 0 {
+				enemy.flash_timer -= dt
+			}
+			if enemy.flame_damage_timer > 0 {
+				enemy.flame_damage_timer -= dt
+			}
+			continue
+		}
+
 		if enemy.flash_timer > 0 {
 			enemy.flash_timer -= dt
 		}
@@ -172,8 +185,11 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			view_top := cam.target.y - cam.offset.y / cam.zoom
 			view_bottom := cam.target.y + cam.offset.y / cam.zoom
 
-			in_view := enemy.pos.x + size > view_left && enemy.pos.x < view_right &&
-				enemy.pos.y + size > view_top && enemy.pos.y < view_bottom
+			in_view :=
+				enemy.pos.x + size > view_left &&
+				enemy.pos.x < view_right &&
+				enemy.pos.y + size > view_top &&
+				enemy.pos.y < view_bottom
 
 			if !in_view {
 				continue
@@ -216,12 +232,26 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 				inset: f32 = 1.0
 
 				new_x := enemy.pos.x + velocity.x
-				if !check_collision(new_x + inset, enemy.pos.y + inset, size - inset * 2, size - inset * 2, &gs.map_data, false) {
+				if !check_collision(
+					new_x + inset,
+					enemy.pos.y + inset,
+					size - inset * 2,
+					size - inset * 2,
+					&gs.map_data,
+					false,
+				) {
 					enemy.pos.x = new_x
 				}
 
 				new_y := enemy.pos.y + velocity.y
-				if !check_collision(enemy.pos.x + inset, new_y + inset, size - inset * 2, size - inset * 2, &gs.map_data, false) {
+				if !check_collision(
+					enemy.pos.x + inset,
+					new_y + inset,
+					size - inset * 2,
+					size - inset * 2,
+					&gs.map_data,
+					false,
+				) {
 					enemy.pos.y = new_y
 				}
 			}
@@ -250,7 +280,11 @@ update_enemy_animation :: proc(enemy: ^Enemy, dt: f32) {
 	}
 }
 
-spawn_enemy_projectile :: proc(enemy: ^Enemy, dir: raylib.Vector2, projectiles: ^[MAX_PROJECTILES]Projectile) {
+spawn_enemy_projectile :: proc(
+	enemy: ^Enemy,
+	dir: raylib.Vector2,
+	projectiles: ^[MAX_PROJECTILES]Projectile,
+) {
 	center := enemy.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
 	vel := dir * FLY_PROJECTILE_SPEED
 
@@ -275,18 +309,19 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 	}
 
 	for &enemy in gs.enemies {
-		if !enemy.alive || !enemy.spawned || enemy.kind == .Fly {
+		if !enemy.alive || !enemy.spawned || enemy.kind == .Fly || enemy.kind == .Boss {
 			continue
 		}
 
-		// AABB overlap
+		// AABB overlap — player hitbox is 8x8 at bottom-center
 		ex := enemy.pos.x
 		ey := enemy.pos.y
-		px := gs.player.pos.x
-		py := gs.player.pos.y
-		s := f32(SPRITE_DST_SIZE)
+		es := f32(SPRITE_DST_SIZE)
+		px := gs.player.pos.x - f32(PLAYER_HITBOX) / 2
+		py := gs.player.pos.y - f32(PLAYER_HITBOX) / 2
+		ps := f32(PLAYER_HITBOX)
 
-		if ex < px + s && ex + s > px && ey < py + s && ey + s > py {
+		if ex < px + ps && ex + es > px && ey < py + ps && ey + es > py {
 			gs.player.hp -= ENEMY_DAMAGE
 			gs.player.invincibility_timer = PLAYER_INVINCIBILITY_TIME
 			spawn_damage_text(gs, gs.player.pos, ENEMY_DAMAGE)
@@ -318,7 +353,10 @@ check_projectile_enemy_collision :: proc(gs: ^Game_State) {
 			ey := enemy.pos.y
 			s := f32(SPRITE_DST_SIZE)
 
-			if proj.pos.x >= ex && proj.pos.x <= ex + s && proj.pos.y >= ey && proj.pos.y <= ey + s {
+			if proj.pos.x >= ex &&
+			   proj.pos.x <= ex + s &&
+			   proj.pos.y >= ey &&
+			   proj.pos.y <= ey + s {
 				enemy.hp -= proj.damage
 				enemy.flash_timer = ENEMY_FLASH_TIME
 				proj.active = false
@@ -326,11 +364,61 @@ check_projectile_enemy_collision :: proc(gs: ^Game_State) {
 
 				if enemy.hp <= 0 {
 					enemy.alive = false
+					if gs.arena.active && rand.float32() < 0.05 {
+						spawn_health_crate(gs, enemy.pos)
+					}
 				}
 				break
 			}
 		}
 	}
+}
+
+draw_boss_hp_bar :: proc(gs: ^Game_State) {
+	if !gs.arena.boss_spawned || gs.arena.boss_defeated {
+		return
+	}
+
+	// Find boss to get current HP
+	boss_hp: i32 = 0
+	for &enemy in gs.enemies {
+		if enemy.alive && enemy.kind == .Boss {
+			boss_hp = enemy.hp
+			break
+		}
+	}
+
+	BOSS_BAR_W: i32 = 180
+	BOSS_BAR_H: i32 = 14
+	BAR_X := (SCREEN_WIDTH - BOSS_BAR_W) / 2
+	BAR_Y: i32 = 20
+	border_color := raylib.Color{71, 50, 75, 255}
+	fill_color := raylib.Color{221, 103, 76, 255}
+
+	// Draw boss name above bar
+	name_size: f32 = 14
+	name_w := raylib.MeasureTextEx(gs.font, "Donald Monroe", name_size, 1).x
+	name_x := (f32(SCREEN_WIDTH) - name_w) / 2
+	name_y := f32(BAR_Y) - 16
+	raylib.DrawTextEx(
+		gs.font,
+		"Donald Monroe",
+		{name_x, name_y},
+		name_size,
+		1,
+		{220, 210, 240, 255},
+	)
+
+	// Draw bar border
+	raylib.DrawRectangle(BAR_X - 3, BAR_Y - 3, BOSS_BAR_W + 6, BOSS_BAR_H + 6, border_color)
+
+	// Draw bar fill
+	fill_ratio := f32(boss_hp) / f32(BOSS_HP)
+	if fill_ratio < 0 {
+		fill_ratio = 0
+	}
+	fill_w := i32(f32(BOSS_BAR_W) * fill_ratio)
+	raylib.DrawRectangle(BAR_X, BAR_Y, fill_w, BOSS_BAR_H, fill_color)
 }
 
 draw_enemies :: proc(gs: ^Game_State) {

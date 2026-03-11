@@ -13,8 +13,9 @@ ANIM_FRAME_TIME :: 0.15
 STICK_DEADZONE :: 0.25
 SPRITE_SRC_SIZE :: 24
 SPRITE_DST_SIZE :: 16
-PLAYER_HP :: 35
-PLAYER_INVINCIBILITY_TIME :: 0.3
+PLAYER_HITBOX :: 8
+PLAYER_HP :: 55
+PLAYER_INVINCIBILITY_TIME :: 1.3
 KNOCKBACK_DECAY :: 0.9
 KNOCKBACK_MIN :: 1.0
 RECOIL_DECAY :: 0.85
@@ -114,7 +115,7 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 		// Mouse aim
 		mouse_screen := raylib.GetMousePosition()
 		mouse_world := raylib.GetScreenToWorld2D(mouse_screen, gs.camera)
-		player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
+		player_center := raylib.Vector2{player.pos.x, player.pos.y - f32(SPRITE_DST_SIZE) / 2}
 		aim_vec := mouse_world - player_center
 		aim_mag := linalg.length(aim_vec)
 		if aim_mag > 0 {
@@ -168,14 +169,13 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 	// Apply and decay knockback
 	if linalg.length(player.knockback_vel) > KNOCKBACK_MIN {
 		kb := player.knockback_vel * dt
-		size := f32(SPRITE_DST_SIZE)
-		inset: f32 = 1.0
+		hb := f32(PLAYER_HITBOX)
 		new_kx := player.pos.x + kb.x
 		if !check_collision(
-			new_kx + inset,
-			player.pos.y + inset,
-			size - inset * 2,
-			size - inset * 2,
+			new_kx - hb / 2,
+			player.pos.y - hb / 2,
+			hb,
+			hb,
 			map_data,
 			enemies_cleared,
 			player.has_key,
@@ -184,10 +184,10 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 		}
 		new_ky := player.pos.y + kb.y
 		if !check_collision(
-			player.pos.x + inset,
-			new_ky + inset,
-			size - inset * 2,
-			size - inset * 2,
+			player.pos.x - hb / 2,
+			new_ky - hb / 2,
+			hb,
+			hb,
 			map_data,
 			enemies_cleared,
 			player.has_key,
@@ -213,16 +213,15 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 	}
 
 	velocity := player.move_dir * PLAYER_SPEED * dt
-	size := f32(SPRITE_DST_SIZE)
-	inset: f32 = 1.0
+	hb := f32(PLAYER_HITBOX)
 
 	// Try X axis
 	new_x := player.pos.x + velocity.x
 	if !check_collision(
-		new_x + inset,
-		player.pos.y + inset,
-		size - inset * 2,
-		size - inset * 2,
+		new_x - hb / 2,
+		player.pos.y - hb / 2,
+		hb,
+		hb,
 		map_data,
 		enemies_cleared,
 		player.has_key,
@@ -233,10 +232,10 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 	// Try Y axis
 	new_y := player.pos.y + velocity.y
 	if !check_collision(
-		player.pos.x + inset,
-		new_y + inset,
-		size - inset * 2,
-		size - inset * 2,
+		player.pos.x - hb / 2,
+		new_y - hb / 2,
+		hb,
+		hb,
 		map_data,
 		enemies_cleared,
 		player.has_key,
@@ -260,7 +259,12 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 	}
 }
 
-check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared: bool, has_key: bool = false) -> bool {
+check_collision :: proc(
+	x, y, w, h: f32,
+	map_data: ^dm.Dot_Map,
+	enemies_cleared: bool,
+	has_key: bool = false,
+) -> bool {
 	// Check all four corners of the rect
 	corners := [4]raylib.Vector2{{x, y}, {x + w, y}, {x, y + h}, {x + w, y + h}}
 
@@ -277,7 +281,13 @@ check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared:
 		sym := cell.symbol
 
 		// p, e, f, h, k, and c tiles are passable (spawn points, pickups)
-		if sym == 'p' || sym == 'e' || sym == 'f' || sym == 'h' || sym == 'k' || sym == 'c' {
+		if sym == 'p' ||
+		   sym == 'e' ||
+		   sym == 'f' ||
+		   sym == 'h' ||
+		   sym == 'k' ||
+		   sym == 'c' ||
+		   sym == 'B' {
 			continue
 		}
 
@@ -345,7 +355,8 @@ draw_player :: proc(
 		height = f32(SPRITE_DST_SIZE),
 	}
 
-	raylib.DrawTexturePro(tex, src, dst, {0, 0}, 0, raylib.WHITE)
+	sprite_origin := raylib.Vector2{f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE)}
+	raylib.DrawTexturePro(tex, src, dst, sprite_origin, 0, raylib.WHITE)
 
 	// Draw weapon if player has one — rotated toward aim direction
 	if player.weapon != .None {
@@ -359,7 +370,7 @@ draw_player :: proc(
 			weapon_tex = flamethrower_tex
 		}
 
-		player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, 11}
+		player_center := player.pos + {0, -5}
 		weapon_size: f32 = f32(SPRITE_DST_SIZE) * 0.78
 		angle := player.blaster_angle
 
@@ -440,8 +451,8 @@ draw_ammo_display :: proc(player: ^Player, ammo_tex: raylib.Texture2D) {
 
 check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 	// Get player center tile coords
-	center_x := int(player.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
-	center_y := int(player.pos.y + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+	center_x := int(player.pos.x) / TILE_SIZE
+	center_y := int(player.pos.y - f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
 
 	if center_y < 0 || center_y >= map_data.height {
 		return
@@ -561,8 +572,9 @@ check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {
 	}
 
 	// Check the tile the player is trying to move into
-	center_x := player.pos.x + f32(SPRITE_DST_SIZE) / 2 + player.move_dir.x * f32(SPRITE_DST_SIZE) / 2
-	center_y := player.pos.y + f32(SPRITE_DST_SIZE) / 2 + player.move_dir.y * f32(SPRITE_DST_SIZE) / 2
+	center_x := player.pos.x + player.move_dir.x * f32(PLAYER_HITBOX) / 2
+	center_y :=
+		player.pos.y - f32(SPRITE_DST_SIZE) / 2 + player.move_dir.y * f32(PLAYER_HITBOX) / 2
 	tx := int(center_x) / TILE_SIZE
 	ty := int(center_y) / TILE_SIZE
 
@@ -580,8 +592,8 @@ check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {
 }
 
 player_near_door :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {
-	center_x := int(player.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
-	center_y := int(player.pos.y + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+	center_x := int(player.pos.x) / TILE_SIZE
+	center_y := int(player.pos.y - f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
 
 	// Check the player's tile and all 8 neighbors
 	for dy := -1; dy <= 1; dy += 1 {

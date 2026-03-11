@@ -9,7 +9,7 @@ import "vendor:raylib"
 PROJECTILE_SPEED :: 200.0
 PROJECTILE_LIFETIME :: 2.0
 PROJECTILE_RADIUS :: 2.0
-MAX_PROJECTILES :: 32
+MAX_PROJECTILES :: 256
 SHOOT_RECOIL :: 3.0
 
 BLASTER_FIRE_COOLDOWN :: 0.25
@@ -100,7 +100,7 @@ weapon_damage :: proc(kind: Weapon_Kind) -> i32 {
 }
 
 get_barrel_tip :: proc(player: ^Player) -> raylib.Vector2 {
-	player_center := player.pos + {f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
+	player_center := raylib.Vector2{player.pos.x, player.pos.y - f32(SPRITE_DST_SIZE) / 2}
 	barrel_length: f32 = f32(SPRITE_DST_SIZE) * 0.78
 	angle_rad := player.blaster_angle * (math.PI / 180.0)
 	return(
@@ -166,7 +166,7 @@ update_projectiles :: proc(
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		if sym != 'p' && sym != 'e' && sym != 'f' {
+		if sym != 'p' && sym != 'e' && sym != 'f' && sym != 'B' {
 			if td, ok := map_data.metadata[sym]; ok {
 				if !td.passable {
 					spawn_impact_particles(proj.pos, particles)
@@ -194,9 +194,9 @@ check_enemy_projectile_player_collision :: proc(gs: ^Game_State) {
 		return
 	}
 
-	px := gs.player.pos.x
-	py := gs.player.pos.y
-	s := f32(SPRITE_DST_SIZE)
+	px := gs.player.pos.x - f32(PLAYER_HITBOX) / 2
+	py := gs.player.pos.y - f32(PLAYER_HITBOX) / 2
+	ps := f32(PLAYER_HITBOX)
 
 	for &proj in gs.projectiles {
 		if !proj.active || !proj.is_enemy {
@@ -204,9 +204,9 @@ check_enemy_projectile_player_collision :: proc(gs: ^Game_State) {
 		}
 
 		if proj.pos.x >= px &&
-		   proj.pos.x <= px + s &&
+		   proj.pos.x <= px + ps &&
 		   proj.pos.y >= py &&
-		   proj.pos.y <= py + s {
+		   proj.pos.y <= py + ps {
 			gs.player.hp -= proj.damage
 			gs.player.invincibility_timer = PLAYER_INVINCIBILITY_TIME
 			proj.active = false
@@ -411,6 +411,9 @@ check_flame_enemy_collision :: proc(gs: ^Game_State) {
 
 				if enemy.hp <= 0 {
 					enemy.alive = false
+					if gs.arena.active && rand.float32() < 0.05 {
+						spawn_health_crate(gs, enemy.pos)
+					}
 				}
 			}
 		}

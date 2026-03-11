@@ -3,6 +3,7 @@ package sheryl_and_benny
 import "vendor:raylib"
 import dm "../dotmap"
 import "core:fmt"
+import "core:math"
 import "core:math/rand"
 import "core:strings"
 
@@ -12,6 +13,8 @@ TILE_SIZE         :: 16
 TARGET_FPS        :: 60
 CAMERA_ZOOM       :: 3.0
 MAX_DAMAGE_TEXTS  :: 8
+MAX_HEALTH_CRATES :: 8
+HEALTH_CRATE_HEAL :: 15
 DAMAGE_TEXT_SPEED      :: 20.0
 DAMAGE_TEXT_TIME       :: 0.8
 DOOR_ANIM_FRAME_TIME   :: 0.2
@@ -26,6 +29,11 @@ Damage_Text :: struct {
 	pos:    raylib.Vector2,
 	timer:  f32,
 	damage: i32,
+}
+
+Health_Crate :: struct {
+	pos:    raylib.Vector2,
+	active: bool,
 }
 
 Game_State :: struct {
@@ -53,6 +61,8 @@ Game_State :: struct {
 	spawn_pos:           raylib.Vector2,
 	white_flash_shader:  raylib.Shader,
 	damage_texts:        [MAX_DAMAGE_TEXTS]Damage_Text,
+	health_crates:       [MAX_HEALTH_CRATES]Health_Crate,
+	health_crate_tex:    raylib.Texture2D,
 	reticle_tex:         raylib.Texture2D,
 	ammo_tex:            raylib.Texture2D,
 	phase:               Game_Phase,
@@ -65,6 +75,10 @@ Game_State :: struct {
 	benny_idle_tex:      raylib.Texture2D,
 	sheryl_move_tex:     raylib.Texture2D,
 	sheryl_idle_tex:     raylib.Texture2D,
+	boss_move_tex:       raylib.Texture2D,
+	arena:               Arena_State,
+	boss_victory:        bool,
+	boss_victory_selection: i32,
 }
 
 main :: proc() {
@@ -129,6 +143,8 @@ main :: proc() {
 	gs.fly_dead_tex = raylib.LoadTexture("assets/sprites/enemy_fly_dead.png")
 	gs.bunny_move_tex = raylib.LoadTexture("assets/sprites/enemy_crazy_bunny_move.png")
 	gs.bunny_dead_tex = raylib.LoadTexture("assets/sprites/enemy_crazy_bunny_dead.png")
+	gs.boss_move_tex = raylib.LoadTexture("assets/sprites/enemy_boss.png")
+	gs.health_crate_tex = raylib.LoadTexture("assets/sprites/health_pickup.png")
 
 	// Load reticle cursor
 	gs.reticle_tex = raylib.LoadTexture("assets/sprites/reticle.png")
@@ -159,8 +175,8 @@ void main() {
 	for row, y in gs.map_data.grid {
 		for cell, x in row {
 			if cell.symbol == 'p' && !spawn_found {
-				spawn_x = f32(x * TILE_SIZE)
-				spawn_y = f32(y * TILE_SIZE)
+				spawn_x = f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2
+				spawn_y = f32(y * TILE_SIZE) + f32(TILE_SIZE)
 				spawn_found = true
 				break
 			}
@@ -174,11 +190,12 @@ void main() {
 
 	// Init enemies
 	init_enemies(&gs)
+	init_arena(&gs)
 
 	// Init camera centered on spawn
 	gs.camera.zoom = CAMERA_ZOOM
 	gs.camera.offset = {f32(SCREEN_WIDTH) / 2, f32(SCREEN_HEIGHT) / 2}
-	gs.camera.target = gs.spawn_pos
+	gs.camera.target = {gs.spawn_pos.x, gs.spawn_pos.y - f32(SPRITE_DST_SIZE) / 2}
 
 	// Game loop
 	game_loop: for !raylib.WindowShouldClose() {
@@ -189,7 +206,7 @@ void main() {
 			handle_menu_input(&gs)
 
 		case .Playing:
-			if !gs.game_over {
+			if !gs.game_over && !gs.boss_victory {
 				get_player_input(&gs.player, &gs)
 
 				if gs.player.fire_cooldown > 0 {
@@ -199,7 +216,13 @@ void main() {
 					gs.player.invincibility_timer -= dt
 				}
 
-				gs.enemies_cleared = are_enemies_cleared(&gs)
+				update_arena_waves(&gs, dt)
+
+				if gs.arena.active {
+					gs.enemies_cleared = gs.arena.boss_defeated
+				} else {
+					gs.enemies_cleared = are_enemies_cleared(&gs)
+				}
 
 				move_and_collide(&gs.player, &gs.map_data, dt, gs.enemies_cleared)
 
@@ -216,6 +239,7 @@ void main() {
 				update_animation(&gs.player, dt)
 
 				check_pickup(&gs.player, &gs.map_data)
+				check_health_crate_pickup(&gs)
 
 				update_damage_texts(&gs.damage_texts, dt)
 
@@ -255,7 +279,19 @@ void main() {
 					gs.game_over = true
 				}
 
+				if gs.arena.boss_defeated && !gs.boss_victory {
+					gs.boss_victory = true
+					gs.boss_victory_selection = 0
+				}
+
 				update_camera(&gs)
+			} else if gs.boss_victory {
+				action := handle_boss_victory_input(&gs)
+				if action == 1 {
+					reset_game(&gs)
+				} else if action == 2 {
+					break game_loop
+				}
 			} else {
 				action := handle_game_over_input(&gs)
 				if action == 1 {
@@ -278,6 +314,7 @@ void main() {
 			raylib.BeginMode2D(gs.camera)
 			draw_map(&gs)
 			draw_enemies(&gs)
+			draw_health_crates(&gs)
 			draw_particles(&gs.particles)
 			draw_flame_particles(&gs.flame_particles)
 			draw_player(&gs.player, gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex)
@@ -287,6 +324,23 @@ void main() {
 
 			draw_hp_bar(&gs.player)
 			draw_ammo_display(&gs.player, gs.ammo_tex)
+			draw_boss_hp_bar(&gs)
+
+			// Arena objective text with subtle pulse
+			if gs.arena.active && !gs.arena.boss_defeated {
+				pulse := 1.0 + 0.05 * math.sin(f32(raylib.GetTime()) * 3.0)
+				base_size: f32 = 10
+				text_size := base_size * pulse
+				text_alpha := u8(200 + 55 * math.sin(f32(raylib.GetTime()) * 2.0))
+				raylib.DrawTextEx(
+					gs.font,
+					"Survive the enemy waves!",
+					{8, 8},
+					text_size,
+					1,
+					{255, 220, 50, text_alpha},
+				)
+			}
 
 			if gs.door_locked_msg_timer > 0 {
 				msg :: "Find the key to unlock"
@@ -297,7 +351,9 @@ void main() {
 				raylib.DrawTextEx(gs.font, msg, {msg_x, msg_y}, msg_size, 1, {255, 220, 50, 255})
 			}
 
-			if gs.game_over {
+			if gs.boss_victory {
+				draw_boss_victory(&gs)
+			} else if gs.game_over {
 				draw_game_over(&gs)
 			}
 		}
@@ -336,6 +392,8 @@ void main() {
 	raylib.UnloadTexture(gs.fly_dead_tex)
 	raylib.UnloadTexture(gs.bunny_move_tex)
 	raylib.UnloadTexture(gs.bunny_dead_tex)
+	raylib.UnloadTexture(gs.boss_move_tex)
+	raylib.UnloadTexture(gs.health_crate_tex)
 	raylib.UnloadTexture(gs.reticle_tex)
 	raylib.UnloadTexture(gs.ammo_tex)
 	raylib.UnloadFont(gs.font)
@@ -374,7 +432,7 @@ init_player :: proc(gs: ^Game_State) {
 			pos              = gs.spawn_pos,
 			sprite_sheet     = gs.sheryl_move_tex,
 			idle_sheet       = gs.sheryl_idle_tex,
-			frame_count      = 2,
+			frame_count      = 3,
 			idle_frame_count = 4,
 			hp               = PLAYER_HP,
 		}
@@ -503,6 +561,77 @@ draw_game_over :: proc(gs: ^Game_State) {
 	raylib.DrawTextEx(gs.font, "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
 }
 
+// Returns 0=none, 1=continue(restart), 2=quit
+handle_boss_victory_input :: proc(gs: ^Game_State) -> i32 {
+	if raylib.IsKeyPressed(.DOWN) || raylib.IsKeyPressed(.S) || raylib.IsKeyPressed(.UP) || raylib.IsKeyPressed(.W) {
+		gs.boss_victory_selection = 1 - gs.boss_victory_selection
+	}
+
+	confirmed := raylib.IsKeyPressed(.ENTER) || raylib.IsKeyPressed(.SPACE)
+
+	if raylib.IsGamepadAvailable(0) {
+		if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) || raylib.IsGamepadButtonPressed(0, .LEFT_FACE_UP) {
+			gs.boss_victory_selection = 1 - gs.boss_victory_selection
+		}
+		if raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) {
+			confirmed = true
+		}
+	}
+
+	if confirmed {
+		return gs.boss_victory_selection == 0 ? 1 : 2
+	}
+	return 0
+}
+
+draw_boss_victory :: proc(gs: ^Game_State) {
+	// Dark overlay
+	raylib.DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, {0, 0, 0, 150})
+
+	// Panel
+	PANEL_W :: 260
+	PANEL_H :: 130
+	PANEL_X :: (SCREEN_WIDTH - PANEL_W) / 2
+	PANEL_Y :: (SCREEN_HEIGHT - PANEL_H) / 2
+
+	raylib.DrawRectangle(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, {20, 16, 30, 240})
+	raylib.DrawRectangleLinesEx(
+		{f32(PANEL_X), f32(PANEL_Y), f32(PANEL_W), f32(PANEL_H)},
+		2,
+		{200, 180, 220, 255},
+	)
+
+	// Title
+	title_size: f32 = 22
+	title_w := raylib.MeasureTextEx(gs.font, "You captured Monroe!", title_size, 1).x
+	title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
+	title_y := f32(PANEL_Y) + 15
+	raylib.DrawTextEx(gs.font, "You captured Monroe!", {title_x, title_y}, title_size, 1, {255, 220, 50, 255})
+
+	// Menu options
+	option_size: f32 = 20
+
+	// Continue
+	continue_w := raylib.MeasureTextEx(gs.font, "CONTINUE", option_size, 1).x
+	continue_x := f32(PANEL_X) + (f32(PANEL_W) - continue_w) / 2
+	continue_y := f32(PANEL_Y) + 65
+	continue_color: raylib.Color = gs.boss_victory_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
+	if gs.boss_victory_selection == 0 {
+		raylib.DrawTextEx(gs.font, ">", {continue_x - 18, continue_y}, option_size, 1, continue_color)
+	}
+	raylib.DrawTextEx(gs.font, "CONTINUE", {continue_x, continue_y}, option_size, 1, continue_color)
+
+	// Quit
+	quit_w := raylib.MeasureTextEx(gs.font, "QUIT", option_size, 1).x
+	quit_x := f32(PANEL_X) + (f32(PANEL_W) - quit_w) / 2
+	quit_y := f32(PANEL_Y) + 95
+	quit_color: raylib.Color = gs.boss_victory_selection == 0 ? {180, 180, 180, 255} : {255, 220, 50, 255}
+	if gs.boss_victory_selection == 1 {
+		raylib.DrawTextEx(gs.font, ">", {quit_x - 18, quit_y}, option_size, 1, quit_color)
+	}
+	raylib.DrawTextEx(gs.font, "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
+}
+
 reset_game :: proc(gs: ^Game_State) {
 	// Reset player — preserve identity fields (sprite_sheet, frame_count, etc.)
 	gs.player.pos = gs.spawn_pos
@@ -543,14 +672,20 @@ reset_game :: proc(gs: ^Game_State) {
 		enemy = {}
 	}
 	init_enemies(gs)
+	init_arena(gs)
 
 	for &dt_text in gs.damage_texts {
 		dt_text.active = false
+	}
+	for &crate in gs.health_crates {
+		crate.active = false
 	}
 
 	gs.enemies_cleared = false
 	gs.game_over = false
 	gs.game_over_selection = 0
+	gs.boss_victory = false
+	gs.boss_victory_selection = 0
 	gs.door_locked_msg_timer = 0
 	gs.door_unlocked = false
 	gs.door_anim_timer = 0
@@ -590,8 +725,8 @@ check_door_transition :: proc(gs: ^Game_State) -> string {
 		return ""
 	}
 
-	center_x := int(gs.player.pos.x + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
-	center_y := int(gs.player.pos.y + f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
+	center_x := int(gs.player.pos.x) / TILE_SIZE
+	center_y := int(gs.player.pos.y - f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
 
 	if center_y < 0 || center_y >= gs.map_data.height {
 		return ""
@@ -680,8 +815,8 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	for row, y in gs.map_data.grid {
 		for cell, x in row {
 			if cell.symbol == 'p' && !spawn_found {
-				spawn_x = f32(x * TILE_SIZE)
-				spawn_y = f32(y * TILE_SIZE)
+				spawn_x = f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2
+				spawn_y = f32(y * TILE_SIZE) + f32(TILE_SIZE)
 				spawn_found = true
 				break
 			}
@@ -713,12 +848,16 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	for &dt_text in gs.damage_texts {
 		dt_text.active = false
 	}
+	for &crate in gs.health_crates {
+		crate.active = false
+	}
 
 	// Re-init enemies
 	for &enemy in gs.enemies {
 		enemy = {}
 	}
 	init_enemies(gs)
+	init_arena(gs)
 
 	gs.enemies_cleared = false
 	gs.door_locked_msg_timer = 0
@@ -727,6 +866,59 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	gs.door_anim_frame = 0
 	gs.player.has_key = false
 	update_camera(gs)
+}
+
+spawn_health_crate :: proc(gs: ^Game_State, pos: raylib.Vector2) {
+	for &crate in gs.health_crates {
+		if !crate.active {
+			crate = Health_Crate {
+				pos    = pos,
+				active = true,
+			}
+			return
+		}
+	}
+}
+
+check_health_crate_pickup :: proc(gs: ^Game_State) {
+	px := gs.player.pos.x - f32(PLAYER_HITBOX) / 2
+	py := gs.player.pos.y - f32(PLAYER_HITBOX) / 2
+	ps := f32(PLAYER_HITBOX)
+
+	for &crate in gs.health_crates {
+		if !crate.active {
+			continue
+		}
+
+		cs := f32(SPRITE_DST_SIZE)
+		if px < crate.pos.x + cs && px + ps > crate.pos.x &&
+		   py < crate.pos.y + cs && py + ps > crate.pos.y {
+			gs.player.hp = min(gs.player.hp + HEALTH_CRATE_HEAL, PLAYER_HP)
+			crate.active = false
+		}
+	}
+}
+
+draw_health_crates :: proc(gs: ^Game_State) {
+	for &crate in gs.health_crates {
+		if !crate.active {
+			continue
+		}
+
+		src := raylib.Rectangle {
+			x      = 0,
+			y      = 0,
+			width  = f32(gs.health_crate_tex.width),
+			height = f32(gs.health_crate_tex.height),
+		}
+		dst := raylib.Rectangle {
+			x      = crate.pos.x,
+			y      = crate.pos.y,
+			width  = f32(SPRITE_DST_SIZE),
+			height = f32(SPRITE_DST_SIZE),
+		}
+		raylib.DrawTexturePro(gs.health_crate_tex, src, dst, {0, 0}, 0, raylib.WHITE)
+	}
 }
 
 draw_damage_texts :: proc(texts: ^[MAX_DAMAGE_TEXTS]Damage_Text, font: raylib.Font) {
@@ -740,7 +932,7 @@ draw_damage_texts :: proc(texts: ^[MAX_DAMAGE_TEXTS]Damage_Text, font: raylib.Fo
 		ctext := strings.clone_to_cstring(text, context.temp_allocator)
 		text_size: f32 = 6
 		text_w := raylib.MeasureTextEx(font, ctext, text_size, 0.5).x
-		x := dt_text.pos.x - text_w / 2 + f32(SPRITE_DST_SIZE) / 2
+		x := dt_text.pos.x - text_w / 2
 		raylib.DrawTextEx(font, ctext, {x, dt_text.pos.y}, text_size, 0.5, {255, 80, 80, alpha})
 	}
 }

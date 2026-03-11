@@ -38,7 +38,7 @@ metadata {
         tiles:/home/pots/acjam/assets/sprites/door_unlocked_opens_3x16x16.png,
           passable:true,
         collectable:false,
-        other: to_room=main_area_first.map,animation=true, condition=enemies_cleared && has_key
+        other: to_room=arena.map,animation=true, condition=enemies_cleared && has_key
 
     }
 

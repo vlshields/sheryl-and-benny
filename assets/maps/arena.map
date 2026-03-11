@@ -1,12 +1,12 @@
 
 MAP_START
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-xwwwwwwwwwwwwwwwwwwwwwwwwpwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwpwwwwwwwwwwwwwwwwwwwwBwwwwwwwwwwwwwwwx
 xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
-xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwwwwwwwwwwwx
-xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwwwwwwwwwwwx
-xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwwwwwwwwwwwx
-dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwwwwwwwwwwwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 MAP_END
 
@@ -14,7 +14,7 @@ MAP_END
 metadata {
 
     x: {
-        tiles: /home/pots/acjam/assets/tiles/tile_0019.png,
+        tiles: /home/pots/acjam/assets/tiles/arena_wall.png,
         passable:false,
         collectable:false,
         other: nil
@@ -23,8 +23,8 @@ metadata {
     w: {
         tiles:[
 
-            /home/pots/acjam/assets/tiles/tile_0065.png,
-            /home/pots/acjam/assets/tiles/tile_0064.png
+            /home/pots/acjam/assets/tiles/arena_floor.png,
+            /home/pots/acjam/assets/tiles/arena_floor2.png
         ],
         passable:true,
         collectable:false,
@@ -62,6 +62,13 @@ metadata {
         other: spawn_point=enemy_slug,spawn_time_offset=1300
 
     }
+    B: {
+    tiles:assets/sprites/enemy_boss.png
+        passable:true,
+    collectable:nil,
+    other: spawn_condition=three_enemy_waves_cleared
+
+}
 
 
 }
