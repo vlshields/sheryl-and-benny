@@ -35,10 +35,10 @@ metadata {
     }
 
     d: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0140.png,
+        tiles:/home/pots/acjam/assets/sprites/door_unlocked_opens_3x16x16.png,
           passable:true,
         collectable:false,
-        other: to_room=main_area_first.map, condition=enemies_cleared && has_key
+        other: to_room=main_area_first.map,animation=true, condition=enemies_cleared && has_key
 
     }
 
@@ -93,6 +93,13 @@ metadata {
           passable:true,
         collectable:nil,
         other: spawn_point=enemy_crazy_bunny,spawn_time_offset=1300
+
+    }
+            k: {
+        tiles:assets/sprites/key.png
+          passable:nil,
+        collectable:true,
+        other: number_of_uses=1
 
     }
 }

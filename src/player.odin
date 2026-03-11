@@ -40,6 +40,7 @@ Player :: struct {
 	knockback_vel:       raylib.Vector2,
 	blaster_recoil:      f32,
 	ammo:                i32,
+	has_key:             bool,
 }
 
 get_player_input :: proc(player: ^Player, gs: ^Game_State) {
@@ -177,6 +178,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 			size - inset * 2,
 			map_data,
 			enemies_cleared,
+			player.has_key,
 		) {
 			player.pos.x = new_kx
 		}
@@ -188,6 +190,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 			size - inset * 2,
 			map_data,
 			enemies_cleared,
+			player.has_key,
 		) {
 			player.pos.y = new_ky
 		}
@@ -222,6 +225,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 		size - inset * 2,
 		map_data,
 		enemies_cleared,
+		player.has_key,
 	) {
 		player.pos.x = new_x
 	}
@@ -235,6 +239,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 		size - inset * 2,
 		map_data,
 		enemies_cleared,
+		player.has_key,
 	) {
 		player.pos.y = new_y
 	}
@@ -255,7 +260,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 	}
 }
 
-check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared: bool) -> bool {
+check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared: bool, has_key: bool = false) -> bool {
 	// Check all four corners of the rect
 	corners := [4]raylib.Vector2{{x, y}, {x + w, y}, {x, y + h}, {x + w, y + h}}
 
@@ -271,8 +276,8 @@ check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared:
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		// p, e, f, and h tiles are passable (spawn points, health pickups)
-		if sym == 'p' || sym == 'e' || sym == 'f' || sym == 'h' {
+		// p, e, f, h, k, and c tiles are passable (spawn points, pickups)
+		if sym == 'p' || sym == 'e' || sym == 'f' || sym == 'h' || sym == 'k' || sym == 'c' {
 			continue
 		}
 
@@ -280,7 +285,10 @@ check_collision :: proc(x, y, w, h: f32, map_data: ^dm.Dot_Map, enemies_cleared:
 			if !td.passable {
 				return true
 			}
-			if td.condition == "enemies_cleared" && !enemies_cleared {
+			if strings.contains(td.condition, "enemies_cleared") && !enemies_cleared {
+				return true
+			}
+			if strings.contains(td.condition, "has_key") && !has_key {
 				return true
 			}
 		} else {
@@ -459,6 +467,12 @@ check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 				player.hp = min(player.hp + heal, PLAYER_HP)
 				cell.collected = true
 			}
+
+			// Key pickup
+			if cell.symbol == 'k' {
+				player.has_key = true
+				cell.collected = true
+			}
 		}
 	}
 }
@@ -539,6 +553,30 @@ weapon_max_ammo :: proc(kind: Weapon_Kind) -> i32 {
 		return FLAMETHROWER_MAX_AMMO
 	}
 	return 0
+}
+
+check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {
+	if player.move_dir.x == 0 && player.move_dir.y == 0 {
+		return false
+	}
+
+	// Check the tile the player is trying to move into
+	center_x := player.pos.x + f32(SPRITE_DST_SIZE) / 2 + player.move_dir.x * f32(SPRITE_DST_SIZE) / 2
+	center_y := player.pos.y + f32(SPRITE_DST_SIZE) / 2 + player.move_dir.y * f32(SPRITE_DST_SIZE) / 2
+	tx := int(center_x) / TILE_SIZE
+	ty := int(center_y) / TILE_SIZE
+
+	if ty < 0 || ty >= map_data.height || tx < 0 || tx >= len(map_data.grid[ty]) {
+		return false
+	}
+
+	cell := map_data.grid[ty][tx]
+	if td, ok := map_data.metadata[cell.symbol]; ok {
+		if strings.contains(td.condition, "has_key") && !player.has_key {
+			return true
+		}
+	}
+	return false
 }
 
 weapon_ammo_per_icon :: proc(kind: Weapon_Kind) -> i32 {

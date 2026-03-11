@@ -12,8 +12,9 @@ TILE_SIZE         :: 16
 TARGET_FPS        :: 60
 CAMERA_ZOOM       :: 3.0
 MAX_DAMAGE_TEXTS  :: 8
-DAMAGE_TEXT_SPEED :: 20.0
-DAMAGE_TEXT_TIME  :: 0.8
+DAMAGE_TEXT_SPEED      :: 20.0
+DAMAGE_TEXT_TIME       :: 0.8
+DOOR_ANIM_FRAME_TIME   :: 0.2
 
 Game_Phase :: enum {
 	Character_Select,
@@ -56,6 +57,10 @@ Game_State :: struct {
 	ammo_tex:            raylib.Texture2D,
 	phase:               Game_Phase,
 	menu_selection:      i32,
+	door_locked_msg_timer: f32,
+	door_unlocked:       bool,
+	door_anim_timer:     f32,
+	door_anim_frame:     i32,
 	benny_move_tex:      raylib.Texture2D,
 	benny_idle_tex:      raylib.Texture2D,
 	sheryl_move_tex:     raylib.Texture2D,
@@ -214,7 +219,31 @@ void main() {
 
 				update_damage_texts(&gs.damage_texts, dt)
 
-				// Check door transition
+				// Check if player is bumping into a locked door
+				if check_door_blocked(&gs.player, &gs.map_data) {
+					gs.door_locked_msg_timer = 2.0
+				}
+				if gs.door_locked_msg_timer > 0 {
+					gs.door_locked_msg_timer -= dt
+				}
+
+				// Unlock door when conditions met
+				if !gs.door_unlocked && gs.enemies_cleared && gs.player.has_key {
+					gs.door_unlocked = true
+					gs.door_anim_timer = 0
+					gs.door_anim_frame = 0
+				}
+
+				// Update door open animation
+				if gs.door_unlocked && gs.door_anim_frame < 2 {
+					gs.door_anim_timer += dt
+					if gs.door_anim_timer >= DOOR_ANIM_FRAME_TIME {
+						gs.door_anim_timer -= DOOR_ANIM_FRAME_TIME
+						gs.door_anim_frame += 1
+					}
+				}
+
+				// Check door transition (only after animation completes)
 				next_map := check_door_transition(&gs)
 				if len(next_map) > 0 {
 					transition_to_map(&gs, next_map)
@@ -256,6 +285,15 @@ void main() {
 
 			draw_hp_bar(&gs.player)
 			draw_ammo_display(&gs.player, gs.ammo_tex)
+
+			if gs.door_locked_msg_timer > 0 {
+				msg :: "Find the key to unlock"
+				msg_size: f32 = 14
+				msg_w := raylib.MeasureTextEx(gs.font, msg, msg_size, 1).x
+				msg_x := (f32(SCREEN_WIDTH) - msg_w) / 2
+				msg_y: f32 = f32(SCREEN_HEIGHT) - 50
+				raylib.DrawTextEx(gs.font, msg, {msg_x, msg_y}, msg_size, 1, {255, 220, 50, 255})
+			}
 
 			if gs.game_over {
 				draw_game_over(&gs)
@@ -511,6 +549,10 @@ reset_game :: proc(gs: ^Game_State) {
 	gs.enemies_cleared = false
 	gs.game_over = false
 	gs.game_over_selection = 0
+	gs.door_locked_msg_timer = 0
+	gs.door_unlocked = false
+	gs.door_anim_timer = 0
+	gs.door_anim_frame = 0
 	update_camera(gs)
 }
 
@@ -559,6 +601,14 @@ check_door_transition :: proc(gs: ^Game_State) -> string {
 	cell := gs.map_data.grid[center_y][center_x]
 	if td, ok := gs.map_data.metadata[cell.symbol]; ok {
 		if len(td.to_room) > 0 {
+			// Check all conditions before allowing transition
+			if strings.contains(td.condition, "has_key") && !gs.player.has_key {
+				return ""
+			}
+			// Wait for door animation to finish
+			if gs.door_unlocked && gs.door_anim_frame < 2 {
+				return ""
+			}
 			return td.to_room
 		}
 	}
@@ -669,6 +719,11 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	init_enemies(gs)
 
 	gs.enemies_cleared = false
+	gs.door_locked_msg_timer = 0
+	gs.door_unlocked = false
+	gs.door_anim_timer = 0
+	gs.door_anim_frame = 0
+	gs.player.has_key = false
 	update_camera(gs)
 }
 

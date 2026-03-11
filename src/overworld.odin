@@ -38,7 +38,7 @@ draw_map :: proc(gs: ^Game_State) {
 			sym := cell.symbol
 
 			// Spawn points and enemy spawns: draw floor tile instead
-			if sym == 'p' || sym == 'e' || sym == 'f' {
+			if sym == 'p' || sym == 'e' || sym == 'f' || sym == 'c' {
 				if floor_textures != nil && len(floor_textures) > 0 {
 					raylib.DrawTexture(floor_textures[0], i32(x * TILE_SIZE), i32(y * TILE_SIZE), raylib.WHITE)
 				}
@@ -49,6 +49,37 @@ draw_map :: proc(gs: ^Game_State) {
 			if cell.collected {
 				if floor_textures != nil && len(floor_textures) > 0 {
 					raylib.DrawTexture(floor_textures[0], i32(x * TILE_SIZE), i32(y * TILE_SIZE), raylib.WHITE)
+				}
+				continue
+			}
+
+			// Key and door tiles: draw floor underneath first
+			if sym == 'k' || sym == 'd' {
+				if floor_textures != nil && len(floor_textures) > 0 {
+					raylib.DrawTexture(floor_textures[0], i32(x * TILE_SIZE), i32(y * TILE_SIZE), raylib.WHITE)
+				}
+			}
+
+			// Door tiles: draw specific animation frame from spritesheet
+			if sym == 'd' {
+				if texs, ok := &gs.tile_textures[sym]; ok {
+					if len(texs) > 0 {
+						tex := texs[0]
+						frame := gs.door_unlocked ? gs.door_anim_frame : i32(0)
+						src := raylib.Rectangle {
+							x      = f32(frame * TILE_SIZE),
+							y      = 0,
+							width  = f32(TILE_SIZE),
+							height = f32(TILE_SIZE),
+						}
+						dst := raylib.Rectangle {
+							x      = f32(x * TILE_SIZE),
+							y      = f32(y * TILE_SIZE),
+							width  = f32(TILE_SIZE),
+							height = f32(TILE_SIZE),
+						}
+						raylib.DrawTexturePro(tex, src, dst, {0, 0}, 0, raylib.WHITE)
+					}
 				}
 				continue
 			}
