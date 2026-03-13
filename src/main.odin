@@ -11,9 +11,11 @@ SCREEN_WIDTH      :: 640
 SCREEN_HEIGHT     :: 360
 TILE_SIZE         :: 16
 TARGET_FPS        :: 60
-CAMERA_ZOOM       :: 3.0
+CAMERA_ZOOM       :: 2.85
 MAX_DAMAGE_TEXTS  :: 8
 MAX_HEALTH_CRATES :: 8
+MAX_NPCS          :: 8
+NPC_ANIM_FRAME_TIME :: 0.2
 HEALTH_CRATE_HEAL :: 15
 DAMAGE_TEXT_SPEED      :: 20.0
 DAMAGE_TEXT_TIME       :: 0.8
@@ -34,6 +36,16 @@ Damage_Text :: struct {
 Health_Crate :: struct {
 	pos:    raylib.Vector2,
 	active: bool,
+}
+
+NPC :: struct {
+	pos:           raylib.Vector2,
+	active:        bool,
+	sprite_sheet:  raylib.Texture2D,
+	frame_count:   i32,
+	current_frame: i32,
+	anim_timer:    f32,
+	facing_left:   bool,
 }
 
 Game_State :: struct {
@@ -63,6 +75,8 @@ Game_State :: struct {
 	damage_texts:        [MAX_DAMAGE_TEXTS]Damage_Text,
 	health_crates:       [MAX_HEALTH_CRATES]Health_Crate,
 	health_crate_tex:    raylib.Texture2D,
+	npcs:                [MAX_NPCS]NPC,
+	npc_bunny_tex:       raylib.Texture2D,
 	reticle_tex:         raylib.Texture2D,
 	ammo_tex:            raylib.Texture2D,
 	phase:               Game_Phase,
@@ -79,14 +93,42 @@ Game_State :: struct {
 	arena:               Arena_State,
 	boss_victory:        bool,
 	boss_victory_selection: i32,
+	render_target:       raylib.RenderTexture2D,
+	screen_scale:        f32,
+	screen_offset:       raylib.Vector2,
+}
+
+get_virtual_mouse :: proc(gs: ^Game_State) -> raylib.Vector2 {
+	mouse := raylib.GetMousePosition()
+	return {
+		(mouse.x - gs.screen_offset.x) / gs.screen_scale,
+		(mouse.y - gs.screen_offset.y) / gs.screen_scale,
+	}
 }
 
 main :: proc() {
 	raylib.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "ACJAM")
 	defer raylib.CloseWindow()
+
+	monitor := raylib.GetCurrentMonitor()
+	screen_w := raylib.GetMonitorWidth(monitor)
+	screen_h := raylib.GetMonitorHeight(monitor)
+	raylib.SetWindowSize(screen_w, screen_h)
+	raylib.ToggleFullscreen()
 	raylib.SetTargetFPS(TARGET_FPS)
 
 	gs: Game_State
+
+	// Setup render target for virtual resolution scaling
+	gs.render_target = raylib.LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT)
+	raylib.SetTextureFilter(gs.render_target.texture, .POINT)
+	scale_x := f32(screen_w) / f32(SCREEN_WIDTH)
+	scale_y := f32(screen_h) / f32(SCREEN_HEIGHT)
+	gs.screen_scale = min(scale_x, scale_y)
+	gs.screen_offset = {
+		(f32(screen_w) - f32(SCREEN_WIDTH) * gs.screen_scale) / 2,
+		(f32(screen_h) - f32(SCREEN_HEIGHT) * gs.screen_scale) / 2,
+	}
 
 	// Parse map
 	map_data, map_ok := dm.parse_map_file("assets/maps/home_base.map")
@@ -145,6 +187,7 @@ main :: proc() {
 	gs.bunny_dead_tex = raylib.LoadTexture("assets/sprites/enemy_crazy_bunny_dead.png")
 	gs.boss_move_tex = raylib.LoadTexture("assets/sprites/enemy_boss.png")
 	gs.health_crate_tex = raylib.LoadTexture("assets/sprites/health_pickup.png")
+	gs.npc_bunny_tex = raylib.LoadTexture("assets/sprites/npc_bunny_idle.png")
 
 	// Load reticle cursor
 	gs.reticle_tex = raylib.LoadTexture("assets/sprites/reticle.png")
@@ -188,8 +231,9 @@ void main() {
 
 	gs.spawn_pos = {spawn_x, spawn_y}
 
-	// Init enemies
+	// Init enemies and NPCs
 	init_enemies(&gs)
+	init_npcs(&gs)
 	init_arena(&gs)
 
 	// Init camera centered on spawn
@@ -241,7 +285,8 @@ void main() {
 				check_pickup(&gs.player, &gs.map_data)
 				check_health_crate_pickup(&gs)
 
-				update_damage_texts(&gs.damage_texts, dt)
+				update_npcs(&gs, dt)
+			update_damage_texts(&gs.damage_texts, dt)
 
 				// Check if player is bumping into a locked door
 				if check_door_blocked(&gs.player, &gs.map_data) {
@@ -302,8 +347,8 @@ void main() {
 			}
 		}
 
-		// Draw
-		raylib.BeginDrawing()
+		// Draw to virtual render target
+		raylib.BeginTextureMode(gs.render_target)
 		raylib.ClearBackground({20, 16, 30, 255})
 
 		switch gs.phase {
@@ -314,6 +359,7 @@ void main() {
 			raylib.BeginMode2D(gs.camera)
 			draw_map(&gs)
 			draw_enemies(&gs)
+			draw_npcs(&gs)
 			draw_health_crates(&gs)
 			draw_particles(&gs.particles)
 			draw_flame_particles(&gs.flame_particles)
@@ -358,19 +404,28 @@ void main() {
 			}
 		}
 
-		// Draw reticle cursor
+		// Draw reticle cursor in virtual space
 		{
 			RETICLE_SIZE :: 18
-			mouse := raylib.GetMousePosition()
+			mouse := get_virtual_mouse(&gs)
 			src := raylib.Rectangle{0, 0, f32(gs.reticle_tex.width), f32(gs.reticle_tex.height)}
 			dst := raylib.Rectangle{mouse.x - RETICLE_SIZE / 2, mouse.y - RETICLE_SIZE / 2, RETICLE_SIZE, RETICLE_SIZE}
 			raylib.DrawTexturePro(gs.reticle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
 		}
 
+		raylib.EndTextureMode()
+
+		// Blit render target scaled to fullscreen
+		raylib.BeginDrawing()
+		raylib.ClearBackground(raylib.BLACK)
+		src := raylib.Rectangle{0, 0, f32(SCREEN_WIDTH), -f32(SCREEN_HEIGHT)}
+		dst := raylib.Rectangle{gs.screen_offset.x, gs.screen_offset.y, f32(SCREEN_WIDTH) * gs.screen_scale, f32(SCREEN_HEIGHT) * gs.screen_scale}
+		raylib.DrawTexturePro(gs.render_target.texture, src, dst, {0, 0}, 0, raylib.WHITE)
 		raylib.EndDrawing()
 	}
 
 	// Cleanup
+	raylib.UnloadRenderTexture(gs.render_target)
 	for _, &textures in gs.tile_textures {
 		for &tex in textures {
 			raylib.UnloadTexture(tex)
@@ -394,6 +449,7 @@ void main() {
 	raylib.UnloadTexture(gs.bunny_dead_tex)
 	raylib.UnloadTexture(gs.boss_move_tex)
 	raylib.UnloadTexture(gs.health_crate_tex)
+	raylib.UnloadTexture(gs.npc_bunny_tex)
 	raylib.UnloadTexture(gs.reticle_tex)
 	raylib.UnloadTexture(gs.ammo_tex)
 	raylib.UnloadFont(gs.font)
@@ -435,6 +491,8 @@ init_player :: proc(gs: ^Game_State) {
 			frame_count      = 3,
 			idle_frame_count = 4,
 			hp               = PLAYER_HP,
+			weapon           = .Blaster,
+			ammo             = BLASTER_MAX_AMMO,
 		}
 	} else {
 		// Benny
@@ -445,6 +503,8 @@ init_player :: proc(gs: ^Game_State) {
 			frame_count      = 4,
 			idle_frame_count = 5,
 			hp               = PLAYER_HP,
+			weapon           = .Blaster,
+			ammo             = BLASTER_MAX_AMMO,
 		}
 	}
 }
@@ -640,8 +700,8 @@ reset_game :: proc(gs: ^Game_State) {
 	gs.player.current_frame = 0
 	gs.player.anim_timer = 0
 	gs.player.facing_left = false
-	gs.player.weapon = .None
-	gs.player.ammo = 0
+	gs.player.weapon = .Blaster
+	gs.player.ammo = BLASTER_MAX_AMMO
 	gs.player.blaster_angle = 0
 	gs.player.fire_cooldown = 0
 	gs.player.hp = PLAYER_HP
@@ -672,6 +732,7 @@ reset_game :: proc(gs: ^Game_State) {
 		enemy = {}
 	}
 	init_enemies(gs)
+	init_npcs(gs)
 	init_arena(gs)
 
 	for &dt_text in gs.damage_texts {
@@ -852,11 +913,15 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 		crate.active = false
 	}
 
-	// Re-init enemies
+	// Re-init enemies and NPCs
 	for &enemy in gs.enemies {
 		enemy = {}
 	}
+	for &npc in gs.npcs {
+		npc = {}
+	}
 	init_enemies(gs)
+	init_npcs(gs)
 	init_arena(gs)
 
 	gs.enemies_cleared = false
@@ -882,7 +947,7 @@ spawn_health_crate :: proc(gs: ^Game_State, pos: raylib.Vector2) {
 
 check_health_crate_pickup :: proc(gs: ^Game_State) {
 	px := gs.player.pos.x - f32(PLAYER_HITBOX) / 2
-	py := gs.player.pos.y - f32(PLAYER_HITBOX) / 2
+	py := gs.player.pos.y - f32(PLAYER_HITBOX)
 	ps := f32(PLAYER_HITBOX)
 
 	for &crate in gs.health_crates {
@@ -918,6 +983,73 @@ draw_health_crates :: proc(gs: ^Game_State) {
 			height = f32(SPRITE_DST_SIZE),
 		}
 		raylib.DrawTexturePro(gs.health_crate_tex, src, dst, {0, 0}, 0, raylib.WHITE)
+	}
+}
+
+init_npcs :: proc(gs: ^Game_State) {
+	npc_idx := 0
+	for row, y in gs.map_data.grid {
+		for cell, x in row {
+			if cell.symbol == 'n' && npc_idx < MAX_NPCS {
+				gs.npcs[npc_idx] = NPC {
+					pos          = {f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2, f32(y * TILE_SIZE) + f32(TILE_SIZE)},
+					active       = true,
+					sprite_sheet = gs.npc_bunny_tex,
+					frame_count  = 3,
+				}
+				npc_idx += 1
+			}
+		}
+	}
+}
+
+update_npcs :: proc(gs: ^Game_State, dt: f32) {
+	for &npc in gs.npcs {
+		if !npc.active {
+			continue
+		}
+		npc.anim_timer += dt
+		if npc.anim_timer >= NPC_ANIM_FRAME_TIME {
+			npc.anim_timer -= NPC_ANIM_FRAME_TIME
+			npc.current_frame = (npc.current_frame + 1) % npc.frame_count
+		}
+
+		// Face the player
+		if gs.player.pos.x < npc.pos.x {
+			npc.facing_left = true
+		} else {
+			npc.facing_left = false
+		}
+	}
+}
+
+draw_npcs :: proc(gs: ^Game_State) {
+	for &npc in gs.npcs {
+		if !npc.active {
+			continue
+		}
+
+		src_w := f32(SPRITE_SRC_SIZE)
+		if npc.facing_left {
+			src_w = -src_w
+		}
+
+		src := raylib.Rectangle {
+			x      = f32(npc.current_frame * SPRITE_SRC_SIZE),
+			y      = 0,
+			width  = src_w,
+			height = f32(SPRITE_SRC_SIZE),
+		}
+
+		dst := raylib.Rectangle {
+			x      = npc.pos.x,
+			y      = npc.pos.y,
+			width  = f32(SPRITE_DST_SIZE),
+			height = f32(SPRITE_DST_SIZE),
+		}
+
+		origin := raylib.Vector2{f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE)}
+		raylib.DrawTexturePro(npc.sprite_sheet, src, dst, origin, 0, raylib.WHITE)
 	}
 }
 

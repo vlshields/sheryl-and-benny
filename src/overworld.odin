@@ -40,8 +40,8 @@ draw_map :: proc(gs: ^Game_State) {
 			cell := row[x]
 			sym := cell.symbol
 
-			// Spawn points and enemy spawns: draw floor tile instead
-			if sym == 'p' || sym == 'e' || sym == 'f' || sym == 'c' || sym == 'B' {
+			// Spawn points, enemy spawns, NPCs: draw floor tile instead
+			if sym == 'p' || sym == 'e' || sym == 'f' || sym == 'c' || sym == 'n' || sym == 'B' {
 				if floor_textures != nil && len(floor_textures) > 0 {
 					raylib.DrawTexture(
 						floor_textures[0],

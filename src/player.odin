@@ -113,8 +113,8 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 		}
 
 		// Mouse aim
-		mouse_screen := raylib.GetMousePosition()
-		mouse_world := raylib.GetScreenToWorld2D(mouse_screen, gs.camera)
+		mouse_virtual := get_virtual_mouse(gs)
+		mouse_world := raylib.GetScreenToWorld2D(mouse_virtual, gs.camera)
 		player_center := raylib.Vector2{player.pos.x, player.pos.y - f32(SPRITE_DST_SIZE) / 2}
 		aim_vec := mouse_world - player_center
 		aim_mag := linalg.length(aim_vec)
@@ -173,7 +173,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 		new_kx := player.pos.x + kb.x
 		if !check_collision(
 			new_kx - hb / 2,
-			player.pos.y - hb / 2,
+			player.pos.y - hb,
 			hb,
 			hb,
 			map_data,
@@ -185,7 +185,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 		new_ky := player.pos.y + kb.y
 		if !check_collision(
 			player.pos.x - hb / 2,
-			new_ky - hb / 2,
+			new_ky - hb,
 			hb,
 			hb,
 			map_data,
@@ -219,7 +219,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 	new_x := player.pos.x + velocity.x
 	if !check_collision(
 		new_x - hb / 2,
-		player.pos.y - hb / 2,
+		player.pos.y - hb,
 		hb,
 		hb,
 		map_data,
@@ -233,7 +233,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 	new_y := player.pos.y + velocity.y
 	if !check_collision(
 		player.pos.x - hb / 2,
-		new_y - hb / 2,
+		new_y - hb,
 		hb,
 		hb,
 		map_data,
@@ -280,13 +280,14 @@ check_collision :: proc(
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		// p, e, f, h, k, and c tiles are passable (spawn points, pickups)
+		// p, e, f, h, k, c, n tiles are passable (spawn points, pickups, NPCs)
 		if sym == 'p' ||
 		   sym == 'e' ||
 		   sym == 'f' ||
 		   sym == 'h' ||
 		   sym == 'k' ||
 		   sym == 'c' ||
+		   sym == 'n' ||
 		   sym == 'B' {
 			continue
 		}
@@ -370,7 +371,7 @@ draw_player :: proc(
 			weapon_tex = flamethrower_tex
 		}
 
-		player_center := player.pos + {0, -5}
+		player_center := player.pos + {0, -4}
 		weapon_size: f32 = f32(SPRITE_DST_SIZE) * 0.78
 		angle := player.blaster_angle
 
@@ -396,7 +397,7 @@ draw_player :: proc(
 		}
 
 		// Origin at center so weapon looks symmetrical when facing either direction
-		origin := raylib.Vector2{weapon_size / 2, weapon_size / 2}
+		origin := raylib.Vector2{weapon_size / 2 - 1, weapon_size / 2}
 		raylib.DrawTexturePro(weapon_tex, weapon_src, weapon_dst, origin, angle, raylib.WHITE)
 	}
 }
@@ -405,7 +406,7 @@ draw_hp_bar :: proc(player: ^Player) {
 	HP_BAR_W: i32 = 120
 	HP_BAR_H: i32 = 14
 	BAR_X: i32 = 10
-	BAR_Y: i32 = SCREEN_HEIGHT - 24
+	BAR_Y: i32 = SCREEN_HEIGHT - 36
 	border_color := raylib.Color{71, 50, 75, 255}
 	fill_color := raylib.Color{221, 103, 76, 255}
 
@@ -429,7 +430,7 @@ draw_ammo_display :: proc(player: ^Player, ammo_tex: raylib.Texture2D) {
 	ICON_SIZE :: 10
 	ICON_SPACING :: 2
 	BAR_X: i32 = 10
-	BAR_Y: i32 = SCREEN_HEIGHT - 8
+	BAR_Y: i32 = SCREEN_HEIGHT - 14
 
 	src := raylib.Rectangle {
 		x      = 0,

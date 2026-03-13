@@ -318,7 +318,7 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 		ey := enemy.pos.y
 		es := f32(SPRITE_DST_SIZE)
 		px := gs.player.pos.x - f32(PLAYER_HITBOX) / 2
-		py := gs.player.pos.y - f32(PLAYER_HITBOX) / 2
+		py := gs.player.pos.y - f32(PLAYER_HITBOX)
 		ps := f32(PLAYER_HITBOX)
 
 		if ex < px + ps && ex + es > px && ey < py + ps && ey + es > py {

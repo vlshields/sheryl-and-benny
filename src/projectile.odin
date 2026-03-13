@@ -8,7 +8,7 @@ import "vendor:raylib"
 
 PROJECTILE_SPEED :: 200.0
 PROJECTILE_LIFETIME :: 2.0
-PROJECTILE_RADIUS :: 2.0
+PROJECTILE_RADIUS :: 1.7
 MAX_PROJECTILES :: 256
 SHOOT_RECOIL :: 3.0
 
@@ -100,7 +100,7 @@ weapon_damage :: proc(kind: Weapon_Kind) -> i32 {
 }
 
 get_barrel_tip :: proc(player: ^Player) -> raylib.Vector2 {
-	player_center := raylib.Vector2{player.pos.x, player.pos.y - f32(SPRITE_DST_SIZE) / 2}
+	player_center := raylib.Vector2{player.pos.x, player.pos.y - 4}
 	barrel_length: f32 = f32(SPRITE_DST_SIZE) * 0.78
 	angle_rad := player.blaster_angle * (math.PI / 180.0)
 	return(
@@ -195,7 +195,7 @@ check_enemy_projectile_player_collision :: proc(gs: ^Game_State) {
 	}
 
 	px := gs.player.pos.x - f32(PLAYER_HITBOX) / 2
-	py := gs.player.pos.y - f32(PLAYER_HITBOX) / 2
+	py := gs.player.pos.y - f32(PLAYER_HITBOX)
 	ps := f32(PLAYER_HITBOX)
 
 	for &proj in gs.projectiles {

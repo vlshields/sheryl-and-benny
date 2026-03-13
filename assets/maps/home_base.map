@@ -1,12 +1,12 @@
 
 MAP_START
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-xwwwtwwwwwwwwwwwwwwwwwwwwppwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwwwwx
-xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwwwwwwwwwewwwwwwwxxxxxxxxxxxxxx
-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwwwwwwwwwwwwwwwewxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwppwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwnwwwwwwwwwwwwwwwwwwwx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxx
 dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxxxxxxxxxx
-dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwxxxxxxxxxxxxxxxxxxxxxx
+dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 MAP_END
 
@@ -36,17 +36,11 @@ metadata {
         tiles:/home/pots/acjam/assets/tiles/tile_0140.png,
           passable:true,
         collectable:false,
-        other: to_room=pavilion.map, condition=enemies_cleared
+        other: to_room=pavilion.map, condition=nil
 
     }
 
-        t: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0216.png
-          passable:true,
-        collectable:true,
-        other: contains_item=blaster
 
-    }
 
             p: {
         tiles:nil
@@ -55,11 +49,11 @@ metadata {
         other: spawn_point=[player1,player2]
 
     }
-    e: {
+    n: {
         tiles:nil
-          passable:true,
+          passable:nil,
         collectable:nil,
-        other: spawn_point=enemy_slug,spawn_time_offset=1300
+        other: spawn_point=npc_bunny, does_move=false
 
     }
 

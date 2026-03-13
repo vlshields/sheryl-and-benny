@@ -2,11 +2,12 @@ MAP_START
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXddXXXX
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXdDXXXX
 xppwwwwwwwwwwwwwwwwwwgwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwwwwewwwwwwwwwwwwwfwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwgwwwwwwwwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwwwwwwwwwwwx
 xwwwwwwgwwgwwwwwwwwwwwwwwwwwwwwwewwwwwwwwwwfwwwwwwwwwwwwwwwewwwwwwwwwwwwwwwwewwwwwwwgwwwwwwwwwwfwwwwwwwwwwwwewwwwwwwwwwwwwwfwwwwwwwwwwwwwwwwwwwwwwwwwwwx
 xwwwwwwwwwwwwwwwwwwwwwwwwwwwwgwwwwwwwgwwwwwwwwwwwwwwwwwwfwwwwwwwwwwwwwwwwwwwwwwwwwwgwwwwwwwwwwwwwwwwwwgwwwwwwwwwwewwwwgwwwwwwwwwwfwwwwwwwwwwwwwwwwwwwwwx
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -42,17 +43,25 @@ metadata {
     }
 
     d: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0140.png,
+        tiles:/home/pots/acjam/assets/tiles/door_left_side.png
           passable:true,
         collectable:false,
-        other: to_room=main_area_onepointfive.map, condition=enemies_cleared
+        other: to_room=main_area_two.map, condition=enemies_cleared
 
     }
 
-        t: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0216.png
+        D: {
+        tiles:/home/pots/acjam/assets/tiles/door_right_side.png,
           passable:true,
-        collectable:true,
+        collectable:false,
+        other: to_room=main_area_two.map, condition=enemies_cleared
+
+    }
+
+        O: {
+        tiles: /home/pots/acjam/assets/tiles/grass_wall_green.png,
+          passable:false,
+        collectable:nil,
         other: contains_item=slinger
 
     }
