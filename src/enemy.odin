@@ -309,7 +309,7 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 	}
 
 	for &enemy in gs.enemies {
-		if !enemy.alive || !enemy.spawned || enemy.kind == .Fly || enemy.kind == .Boss {
+		if !enemy.alive || !enemy.spawned || enemy.kind == .Fly {
 			continue
 		}
 
@@ -322,15 +322,17 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 		ps := f32(PLAYER_HITBOX)
 
 		if ex < px + ps && ex + es > px && ey < py + ps && ey + es > py {
-			gs.player.hp -= ENEMY_DAMAGE
+			dmg: i32 = enemy.kind == .Boss ? BOSS_CONTACT_DAMAGE : ENEMY_DAMAGE
+			knockback: f32 = enemy.kind == .Boss ? BOSS_KNOCKBACK : ENEMY_KNOCKBACK
+			gs.player.hp -= dmg
 			gs.player.invincibility_timer = PLAYER_INVINCIBILITY_TIME
-			spawn_damage_text(gs, gs.player.pos, ENEMY_DAMAGE)
+			spawn_damage_text(gs, gs.player.pos, dmg)
 
 			// Knockback direction: enemy -> player
 			diff := gs.player.pos - enemy.pos
 			dist := linalg.length(diff)
 			if dist > 0 {
-				gs.player.knockback_vel = linalg.normalize(diff) * ENEMY_KNOCKBACK
+				gs.player.knockback_vel = linalg.normalize(diff) * knockback
 			}
 			return
 		}
