@@ -21,6 +21,14 @@ SLINGER_DAMAGE :: 3
 FLAME_DAMAGE :: 4
 FLAME_DAMAGE_TICK :: 0.15
 
+LASER_GUN_FIRE_COOLDOWN :: 0.12
+LASER_GUN_DAMAGE :: 2
+LASER_GUN_MAX_AMMO :: 50
+LASER_BEAM_LIFETIME :: 0.15
+LASER_BEAM_RANGE :: 200.0
+MAX_LASER_BEAMS :: 8
+PLASMA_DAMAGE_TICK :: 0.12
+
 BLASTER_MAX_AMMO :: 9
 SLINGER_MAX_AMMO :: 65
 FLAMETHROWER_MAX_AMMO :: 100
@@ -37,6 +45,7 @@ Weapon_Kind :: enum {
 	Blaster,
 	Slinger,
 	Flamethrower,
+	Laser_Gun,
 }
 
 Projectile :: struct {
@@ -67,6 +76,14 @@ Flame_Particle :: struct {
 	active:       bool,
 }
 
+Laser_Beam :: struct {
+	start:    raylib.Vector2,
+	end:      raylib.Vector2,
+	lifetime: f32,
+	max_life: f32,
+	active:   bool,
+}
+
 weapon_can_shoot :: proc(kind: Weapon_Kind) -> bool {
 	#partial switch kind {
 	case .Blaster:
@@ -83,6 +100,8 @@ weapon_fire_cooldown :: proc(kind: Weapon_Kind) -> f32 {
 		return BLASTER_FIRE_COOLDOWN
 	case .Slinger:
 		return SLINGER_FIRE_COOLDOWN
+	case .Laser_Gun:
+		return LASER_GUN_FIRE_COOLDOWN
 	}
 	return 0
 }
@@ -95,6 +114,8 @@ weapon_damage :: proc(kind: Weapon_Kind) -> i32 {
 		return SLINGER_DAMAGE
 	case .Flamethrower:
 		return FLAME_DAMAGE
+	case .Laser_Gun:
+		return LASER_GUN_DAMAGE
 	}
 	return 0
 }
@@ -417,5 +438,192 @@ check_flame_enemy_collision :: proc(gs: ^Game_State) {
 				}
 			}
 		}
+	}
+}
+
+update_plasma_beam :: proc(player: ^Player, gs: ^Game_State) {
+	tip := get_barrel_tip(player)
+	angle_rad := player.blaster_angle * (math.PI / 180.0)
+	dir := raylib.Vector2{math.cos(angle_rad), math.sin(angle_rad)}
+
+	// Raycast to find hit point — stops at first wall OR first enemy
+	hit_pos := tip + dir * LASER_BEAM_RANGE
+	hit_enemy_idx := -1
+
+	// Find closest enemy along beam direction
+	closest_enemy_dist: f32 = LASER_BEAM_RANGE + 1
+	for &enemy, idx in gs.enemies {
+		if !enemy.alive || !enemy.spawned {
+			continue
+		}
+
+		ex := enemy.pos.x
+		ey := enemy.pos.y
+		s := f32(SPRITE_DST_SIZE)
+
+		// Sample along beam to check enemy rect
+		for i: f32 = 0; i < LASER_BEAM_RANGE; i += 2 {
+			px := tip.x + dir.x * i
+			py := tip.y + dir.y * i
+			if px >= ex && px <= ex + s && py >= ey && py <= ey + s {
+				if i < closest_enemy_dist {
+					closest_enemy_dist = i
+					hit_enemy_idx = idx
+				}
+				break
+			}
+		}
+	}
+
+	// Raycast for walls, but stop if we already hit an enemy closer
+	max_range: f32 = LASER_BEAM_RANGE
+	if hit_enemy_idx >= 0 {
+		max_range = closest_enemy_dist
+	}
+
+	for i: f32 = 0; i < max_range; i += 1 {
+		check_pos := tip + dir * i
+		tx := int(check_pos.x) / TILE_SIZE
+		ty := int(check_pos.y) / TILE_SIZE
+
+		if tx < 0 || ty < 0 || ty >= gs.map_data.height || tx >= gs.map_data.width {
+			hit_pos = check_pos
+			hit_enemy_idx = -1
+			break
+		}
+
+		cell := gs.map_data.grid[ty][tx]
+		sym := cell.symbol
+
+		if sym != 'p' && sym != 'e' && sym != 'f' && sym != 'B' &&
+		   sym != 'h' && sym != 'k' && sym != 'c' && sym != 'n' {
+			if td, ok := gs.map_data.metadata[sym]; ok {
+				if !td.passable {
+					hit_pos = check_pos
+					hit_enemy_idx = -1
+					break
+				}
+			} else {
+				hit_pos = check_pos
+				hit_enemy_idx = -1
+				break
+			}
+		}
+	}
+
+	// If enemy was closest hit, set beam end to enemy center
+	if hit_enemy_idx >= 0 {
+		hit_pos = tip + dir * closest_enemy_dist
+	}
+
+	// Update beam visual — reuse slot 0 so there is only one active beam
+	gs.laser_beams[0] = Laser_Beam {
+		start    = tip,
+		end      = hit_pos,
+		lifetime = LASER_BEAM_LIFETIME,
+		max_life = LASER_BEAM_LIFETIME,
+		active   = true,
+	}
+
+	// Recoil
+	player.blaster_recoil = SHOOT_RECOIL * 0.3
+
+	// Damage the first enemy hit on a tick timer
+	if hit_enemy_idx >= 0 {
+		enemy := &gs.enemies[hit_enemy_idx]
+		if enemy.flame_damage_timer <= 0 {
+			enemy.hp -= LASER_GUN_DAMAGE
+			enemy.flash_timer = ENEMY_FLASH_TIME
+			enemy.flame_damage_timer = PLASMA_DAMAGE_TICK
+			spawn_damage_text(gs, enemy.pos, LASER_GUN_DAMAGE)
+			spawn_plasma_impact_particles(hit_pos, &gs.particles)
+
+			if enemy.hp <= 0 {
+				enemy.alive = false
+				if gs.arena.active && rand.float32() < 0.05 {
+					spawn_health_crate(gs, enemy.pos)
+				}
+			}
+		}
+	}
+}
+
+spawn_plasma_impact_particles :: proc(pos: raylib.Vector2, particles: ^[MAX_PARTICLES]Particle) {
+	colors := [3]raylib.Color{{100, 255, 150, 255}, {200, 255, 220, 255}, {50, 255, 100, 255}}
+
+	for i := 0; i < 8; i += 1 {
+		angle := rand.float32() * math.PI * 2
+		speed := 30.0 + rand.float32() * 70.0
+		dir := raylib.Vector2{math.cos(angle), math.sin(angle)}
+		lt := 0.1 + rand.float32() * 0.15
+
+		spawn_particle(
+			particles,
+			Particle {
+				pos = pos,
+				vel = dir * speed,
+				lifetime = lt,
+				max_lifetime = lt,
+				color = colors[i % 3],
+				size = 1.0 + rand.float32() * 1.5,
+				active = true,
+			},
+		)
+	}
+}
+
+update_laser_beams :: proc(laser_beams: ^[MAX_LASER_BEAMS]Laser_Beam, dt: f32) {
+	for &beam in laser_beams {
+		if !beam.active {
+			continue
+		}
+		beam.lifetime -= dt
+		if beam.lifetime <= 0 {
+			beam.active = false
+		}
+	}
+}
+
+draw_laser_beams :: proc(laser_beams: ^[MAX_LASER_BEAMS]Laser_Beam) {
+	for &beam in laser_beams {
+		if !beam.active {
+			continue
+		}
+
+		alpha := beam.lifetime / beam.max_life
+		time := f32(raylib.GetTime())
+		pulse := 0.8 + math.sin(time * 30) * 0.2
+		thickness: f32 = 3.0 * f32(pulse)
+
+		dir := beam.end - beam.start
+		length := linalg.length(dir)
+		if length < 1 {
+			continue
+		}
+		dir /= length
+		perp := raylib.Vector2{-dir.y, dir.x}
+
+		// Draw as series of overlapping circles for blobby plasma effect
+		steps := max(int(length / 2), 1)
+		for i in 0 ..< steps {
+			t := f32(i) / f32(steps)
+			pos := beam.start + dir * length * t
+
+			// Wobble perpendicular to beam direction
+			wobble := math.sin(time * 20 + t * 10) * 1.5
+			pos += perp * f32(wobble)
+
+			// Outer glow
+			raylib.DrawCircleV(pos, thickness * 1.5, {100, 255, 150, u8(alpha * 25)})
+			// Inner
+			raylib.DrawCircleV(pos, thickness * 0.7, {100, 255, 150, u8(alpha * 140)})
+			// Core
+			raylib.DrawCircleV(pos, thickness * 0.3, {255, 255, 255, u8(alpha * 200)})
+		}
+
+		// Impact glow at endpoint
+		flash_radius := 3.0 * alpha
+		raylib.DrawCircleV(beam.end, flash_radius * 1.5, {100, 255, 150, u8(alpha * 40)})
+		raylib.DrawCircleV(beam.end, flash_radius, {200, 255, 220, u8(alpha * 180)})
 	}
 }

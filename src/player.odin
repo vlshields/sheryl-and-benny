@@ -76,6 +76,12 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 				player.ammo -= 1
+			} else if player.weapon == .Laser_Gun {
+				update_plasma_beam(player, gs)
+				if player.fire_cooldown <= 0 {
+					player.fire_cooldown = weapon_fire_cooldown(player.weapon)
+					player.ammo -= 1
+				}
 			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
@@ -127,6 +133,12 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 				player.ammo -= 1
+			} else if player.weapon == .Laser_Gun {
+				update_plasma_beam(player, gs)
+				if player.fire_cooldown <= 0 {
+					player.fire_cooldown = weapon_fire_cooldown(player.weapon)
+					player.ammo -= 1
+				}
 			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
@@ -334,6 +346,7 @@ draw_player :: proc(
 	blaster_tex: raylib.Texture2D,
 	slinger_tex: raylib.Texture2D,
 	flamethrower_tex: raylib.Texture2D,
+	lasergun_tex: raylib.Texture2D,
 ) {
 	tex := player.moving ? player.sprite_sheet : player.idle_sheet
 
@@ -369,6 +382,8 @@ draw_player :: proc(
 			weapon_tex = slinger_tex
 		case .Flamethrower:
 			weapon_tex = flamethrower_tex
+		case .Laser_Gun:
+			weapon_tex = lasergun_tex
 		}
 
 		player_center := player.pos + {0, -4}
@@ -551,6 +566,8 @@ weapon_from_name :: proc(name: string) -> Weapon_Kind {
 		return .Slinger
 	case "flamethrower":
 		return .Flamethrower
+	case "lasergun":
+		return .Laser_Gun
 	}
 	return .None
 }
@@ -563,6 +580,8 @@ weapon_max_ammo :: proc(kind: Weapon_Kind) -> i32 {
 		return SLINGER_MAX_AMMO
 	case .Flamethrower:
 		return FLAMETHROWER_MAX_AMMO
+	case .Laser_Gun:
+		return LASER_GUN_MAX_AMMO
 	}
 	return 0
 }
@@ -623,6 +642,8 @@ weapon_ammo_per_icon :: proc(kind: Weapon_Kind) -> i32 {
 		return 5
 	case .Flamethrower:
 		return 10
+	case .Laser_Gun:
+		return 5
 	}
 	return 1
 }

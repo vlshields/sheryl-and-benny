@@ -56,6 +56,8 @@ Game_State :: struct {
 	blaster_tex:         raylib.Texture2D,
 	slinger_tex:         raylib.Texture2D,
 	flamethrower_tex:    raylib.Texture2D,
+	lasergun_tex:        raylib.Texture2D,
+	laser_beams:         [MAX_LASER_BEAMS]Laser_Beam,
 	flame_particles:     [MAX_FLAME_PARTICLES]Flame_Particle,
 	projectiles:         [MAX_PROJECTILES]Projectile,
 	particles:           [MAX_PARTICLES]Particle,
@@ -177,6 +179,7 @@ main :: proc() {
 	gs.blaster_tex = raylib.LoadTexture("assets/sprites/blaster.png")
 	gs.slinger_tex = raylib.LoadTexture("assets/sprites/slinger.png")
 	gs.flamethrower_tex = raylib.LoadTexture("assets/sprites/flamethrower.png")
+	gs.lasergun_tex = raylib.LoadTexture("assets/sprites/laser_gun.png")
 
 	// Load enemy sprites
 	gs.slug_move_tex = raylib.LoadTexture("assets/sprites/enemy_slug_move.png")
@@ -186,7 +189,7 @@ main :: proc() {
 	gs.bunny_move_tex = raylib.LoadTexture("assets/sprites/enemy_crazy_bunny_move.png")
 	gs.bunny_dead_tex = raylib.LoadTexture("assets/sprites/enemy_crazy_bunny_dead.png")
 	gs.boss_move_tex = raylib.LoadTexture("assets/sprites/enemy_boss.png")
-	gs.health_crate_tex = raylib.LoadTexture("assets/sprites/health_pickup.png")
+	gs.health_crate_tex = raylib.LoadTexture("assets/sprites/health_pickup_arena.png")
 	gs.npc_bunny_tex = raylib.LoadTexture("assets/sprites/npc_bunny_idle.png")
 
 	// Load reticle cursor
@@ -273,6 +276,7 @@ void main() {
 				update_projectiles(&gs.projectiles, &gs.particles, &gs.map_data, dt)
 				update_particles(&gs.particles, dt)
 				update_flame_particles(&gs.flame_particles, dt)
+				update_laser_beams(&gs.laser_beams, dt)
 
 				update_enemies(&gs, dt)
 				check_enemy_player_collision(&gs)
@@ -363,7 +367,8 @@ void main() {
 			draw_health_crates(&gs)
 			draw_particles(&gs.particles)
 			draw_flame_particles(&gs.flame_particles)
-			draw_player(&gs.player, gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex)
+			draw_laser_beams(&gs.laser_beams)
+			draw_player(&gs.player, gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex, gs.lasergun_tex)
 			draw_projectiles(&gs.projectiles)
 			draw_damage_texts(&gs.damage_texts, gs.font)
 			raylib.EndMode2D()
@@ -441,6 +446,7 @@ void main() {
 	raylib.UnloadTexture(gs.blaster_tex)
 	raylib.UnloadTexture(gs.slinger_tex)
 	raylib.UnloadTexture(gs.flamethrower_tex)
+	raylib.UnloadTexture(gs.lasergun_tex)
 	raylib.UnloadTexture(gs.slug_move_tex)
 	raylib.UnloadTexture(gs.slug_dead_tex)
 	raylib.UnloadTexture(gs.fly_move_tex)
@@ -719,6 +725,9 @@ reset_game :: proc(gs: ^Game_State) {
 	for &fp in gs.flame_particles {
 		fp.active = false
 	}
+	for &beam in gs.laser_beams {
+		beam.active = false
+	}
 
 	// Reset map collected state
 	for &row in gs.map_data.grid {
@@ -905,6 +914,9 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	}
 	for &fp in gs.flame_particles {
 		fp.active = false
+	}
+	for &beam in gs.laser_beams {
+		beam.active = false
 	}
 	for &dt_text in gs.damage_texts {
 		dt_text.active = false

@@ -59,10 +59,10 @@ metadata {
     }
 
         O: {
-        tiles: /home/pots/acjam/assets/tiles/grass_wall_green.png,
+        tiles: /home/pots/acjam/assets/tiles/grass_wall_green_bottom.png,
           passable:false,
         collectable:nil,
-        other: contains_item=slinger
+        other: nil
 
     }
 
