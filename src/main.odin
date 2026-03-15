@@ -26,6 +26,12 @@ Game_Phase :: enum {
 	Playing,
 }
 
+Pause_Submenu :: enum {
+	None,
+	Controls,
+	Quit_Confirm,
+}
+
 Damage_Text :: struct {
 	active: bool,
 	pos:    raylib.Vector2,
@@ -95,6 +101,10 @@ Game_State :: struct {
 	arena:               Arena_State,
 	boss_victory:        bool,
 	boss_victory_selection: i32,
+	paused:              bool,
+	pause_selection:     i32,
+	pause_submenu:       Pause_Submenu,
+	pause_confirm_selection: i32,
 	render_target:       raylib.RenderTexture2D,
 	screen_scale:        f32,
 	screen_offset:       raylib.Vector2,
@@ -253,7 +263,28 @@ void main() {
 			handle_menu_input(&gs)
 
 		case .Playing:
-			if !gs.game_over && !gs.boss_victory {
+			// Pause toggle
+			if raylib.IsKeyPressed(.P) && !gs.game_over && !gs.boss_victory {
+				if gs.paused {
+					gs.paused = false
+					gs.pause_submenu = .None
+				} else {
+					gs.paused = true
+					gs.pause_selection = 0
+					gs.pause_submenu = .None
+					gs.pause_confirm_selection = 0
+				}
+			}
+
+			if gs.paused {
+				action := handle_pause_input(&gs)
+				if action == 1 {
+					gs.paused = false
+					gs.pause_submenu = .None
+				} else if action == 2 {
+					break game_loop
+				}
+			} else if !gs.game_over && !gs.boss_victory {
 				get_player_input(&gs.player, &gs)
 
 				if gs.player.fire_cooldown > 0 {
@@ -402,7 +433,9 @@ void main() {
 				raylib.DrawTextEx(gs.font, msg, {msg_x, msg_y}, msg_size, 1, {255, 220, 50, 255})
 			}
 
-			if gs.boss_victory {
+			if gs.paused {
+				draw_pause_menu(&gs)
+			} else if gs.boss_victory {
 				draw_boss_victory(&gs)
 			} else if gs.game_over {
 				draw_game_over(&gs)
@@ -698,6 +731,212 @@ draw_boss_victory :: proc(gs: ^Game_State) {
 	raylib.DrawTextEx(gs.font, "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
 }
 
+// Returns 0=none, 1=continue, 2=quit
+handle_pause_input :: proc(gs: ^Game_State) -> i32 {
+	switch gs.pause_submenu {
+	case .None:
+		if raylib.IsKeyPressed(.DOWN) || raylib.IsKeyPressed(.S) {
+			gs.pause_selection = (gs.pause_selection + 1) % 3
+		}
+		if raylib.IsKeyPressed(.UP) || raylib.IsKeyPressed(.W) {
+			gs.pause_selection = (gs.pause_selection + 2) % 3
+		}
+
+		if raylib.IsGamepadAvailable(0) {
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) {
+				gs.pause_selection = (gs.pause_selection + 1) % 3
+			}
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_UP) {
+				gs.pause_selection = (gs.pause_selection + 2) % 3
+			}
+		}
+
+		confirmed := raylib.IsKeyPressed(.ENTER) || raylib.IsKeyPressed(.SPACE)
+		if raylib.IsGamepadAvailable(0) && raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) {
+			confirmed = true
+		}
+
+		if confirmed {
+			switch gs.pause_selection {
+			case 0:
+				return 1 // Continue
+			case 1:
+				gs.pause_submenu = .Controls
+			case 2:
+				gs.pause_submenu = .Quit_Confirm
+				gs.pause_confirm_selection = 1 // Default to "No"
+			}
+		}
+
+	case .Controls:
+		back := raylib.IsKeyPressed(.ENTER) || raylib.IsKeyPressed(.SPACE) || raylib.IsKeyPressed(.ESCAPE)
+		if raylib.IsGamepadAvailable(0) && raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) {
+			back = true
+		}
+		if back {
+			gs.pause_submenu = .None
+		}
+
+	case .Quit_Confirm:
+		if raylib.IsKeyPressed(.DOWN) || raylib.IsKeyPressed(.S) || raylib.IsKeyPressed(.UP) || raylib.IsKeyPressed(.W) {
+			gs.pause_confirm_selection = 1 - gs.pause_confirm_selection
+		}
+		if raylib.IsGamepadAvailable(0) {
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) || raylib.IsGamepadButtonPressed(0, .LEFT_FACE_UP) {
+				gs.pause_confirm_selection = 1 - gs.pause_confirm_selection
+			}
+		}
+
+		back := raylib.IsKeyPressed(.ESCAPE)
+		if back {
+			gs.pause_submenu = .None
+			return 0
+		}
+
+		confirmed := raylib.IsKeyPressed(.ENTER) || raylib.IsKeyPressed(.SPACE)
+		if raylib.IsGamepadAvailable(0) && raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) {
+			confirmed = true
+		}
+		if confirmed {
+			if gs.pause_confirm_selection == 0 {
+				return 2 // Quit
+			} else {
+				gs.pause_submenu = .None
+			}
+		}
+	}
+	return 0
+}
+
+draw_pause_menu :: proc(gs: ^Game_State) {
+	// Dark overlay
+	raylib.DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, {0, 0, 0, 150})
+
+	switch gs.pause_submenu {
+	case .None:
+		PANEL_W :: 220
+		PANEL_H :: 160
+		PANEL_X :: (SCREEN_WIDTH - PANEL_W) / 2
+		PANEL_Y :: (SCREEN_HEIGHT - PANEL_H) / 2
+
+		raylib.DrawRectangle(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, {20, 16, 30, 240})
+		raylib.DrawRectangleLinesEx(
+			{f32(PANEL_X), f32(PANEL_Y), f32(PANEL_W), f32(PANEL_H)},
+			2,
+			{200, 180, 220, 255},
+		)
+
+		// Title
+		title_size: f32 = 28
+		title_w := raylib.MeasureTextEx(gs.font, "PAUSED", title_size, 1).x
+		title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
+		title_y := f32(PANEL_Y) + 12
+		raylib.DrawTextEx(gs.font, "PAUSED", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
+
+		option_size: f32 = 20
+		options := [3]cstring{"CONTINUE", "CONTROLS", "QUIT"}
+
+		for i: i32 = 0; i < 3; i += 1 {
+			opt_w := raylib.MeasureTextEx(gs.font, options[i], option_size, 1).x
+			opt_x := f32(PANEL_X) + (f32(PANEL_W) - opt_w) / 2
+			opt_y := f32(PANEL_Y) + 55 + f32(i) * 30
+			color: raylib.Color = gs.pause_selection == i ? {255, 220, 50, 255} : {180, 180, 180, 255}
+			if gs.pause_selection == i {
+				raylib.DrawTextEx(gs.font, ">", {opt_x - 18, opt_y}, option_size, 1, color)
+			}
+			raylib.DrawTextEx(gs.font, options[i], {opt_x, opt_y}, option_size, 1, color)
+		}
+
+	case .Controls:
+		PANEL_W :: 280
+		PANEL_H :: 200
+		PANEL_X :: (SCREEN_WIDTH - PANEL_W) / 2
+		PANEL_Y :: (SCREEN_HEIGHT - PANEL_H) / 2
+
+		raylib.DrawRectangle(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, {20, 16, 30, 240})
+		raylib.DrawRectangleLinesEx(
+			{f32(PANEL_X), f32(PANEL_Y), f32(PANEL_W), f32(PANEL_H)},
+			2,
+			{200, 180, 220, 255},
+		)
+
+		title_size: f32 = 22
+		title_w := raylib.MeasureTextEx(gs.font, "CONTROLS", title_size, 1).x
+		title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
+		title_y := f32(PANEL_Y) + 10
+		raylib.DrawTextEx(gs.font, "CONTROLS", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
+
+		label_size: f32 = 12
+		lx: f32 = f32(PANEL_X) + 20
+		ly: f32 = f32(PANEL_Y) + 42
+		line_h: f32 = 18
+		label_color := raylib.Color{180, 180, 180, 255}
+		value_color := raylib.Color{255, 220, 50, 255}
+
+		controls := [5][2]cstring{
+			{"MOVE", "WASD"},
+			{"AIM", "MOUSE"},
+			{"SHOOT", "LEFT CLICK"},
+			{"RELOAD", "RIGHT CLICK"},
+			{"PAUSE", "P"},
+		}
+
+		for i := 0; i < 5; i += 1 {
+			y := ly + f32(i) * line_h
+			raylib.DrawTextEx(gs.font, controls[i][0], {lx, y}, label_size, 1, label_color)
+			raylib.DrawTextEx(gs.font, controls[i][1], {lx + 130, y}, label_size, 1, value_color)
+		}
+
+		// Back button
+		back_size: f32 = 16
+		back_w := raylib.MeasureTextEx(gs.font, "BACK", back_size, 1).x
+		back_x := f32(PANEL_X) + (f32(PANEL_W) - back_w) / 2
+		back_y := f32(PANEL_Y) + f32(PANEL_H) - 32
+		raylib.DrawTextEx(gs.font, "> BACK", {back_x - 18, back_y}, back_size, 1, {255, 220, 50, 255})
+
+	case .Quit_Confirm:
+		PANEL_W :: 240
+		PANEL_H :: 130
+		PANEL_X :: (SCREEN_WIDTH - PANEL_W) / 2
+		PANEL_Y :: (SCREEN_HEIGHT - PANEL_H) / 2
+
+		raylib.DrawRectangle(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, {20, 16, 30, 240})
+		raylib.DrawRectangleLinesEx(
+			{f32(PANEL_X), f32(PANEL_Y), f32(PANEL_W), f32(PANEL_H)},
+			2,
+			{200, 180, 220, 255},
+		)
+
+		title_size: f32 = 20
+		title_w := raylib.MeasureTextEx(gs.font, "ARE YOU SURE?", title_size, 1).x
+		title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
+		title_y := f32(PANEL_Y) + 15
+		raylib.DrawTextEx(gs.font, "ARE YOU SURE?", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
+
+		option_size: f32 = 20
+
+		// Yes
+		yes_w := raylib.MeasureTextEx(gs.font, "YES", option_size, 1).x
+		yes_x := f32(PANEL_X) + (f32(PANEL_W) - yes_w) / 2
+		yes_y := f32(PANEL_Y) + 60
+		yes_color: raylib.Color = gs.pause_confirm_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
+		if gs.pause_confirm_selection == 0 {
+			raylib.DrawTextEx(gs.font, ">", {yes_x - 18, yes_y}, option_size, 1, yes_color)
+		}
+		raylib.DrawTextEx(gs.font, "YES", {yes_x, yes_y}, option_size, 1, yes_color)
+
+		// No
+		no_w := raylib.MeasureTextEx(gs.font, "NO", option_size, 1).x
+		no_x := f32(PANEL_X) + (f32(PANEL_W) - no_w) / 2
+		no_y := f32(PANEL_Y) + 90
+		no_color: raylib.Color = gs.pause_confirm_selection == 1 ? {255, 220, 50, 255} : {180, 180, 180, 255}
+		if gs.pause_confirm_selection == 1 {
+			raylib.DrawTextEx(gs.font, ">", {no_x - 18, no_y}, option_size, 1, no_color)
+		}
+		raylib.DrawTextEx(gs.font, "NO", {no_x, no_y}, option_size, 1, no_color)
+	}
+}
+
 reset_game :: proc(gs: ^Game_State) {
 	// Reset player — preserve identity fields (sprite_sheet, frame_count, etc.)
 	gs.player.pos = gs.spawn_pos
@@ -756,6 +995,8 @@ reset_game :: proc(gs: ^Game_State) {
 	gs.game_over_selection = 0
 	gs.boss_victory = false
 	gs.boss_victory_selection = 0
+	gs.paused = false
+	gs.pause_submenu = .None
 	gs.door_locked_msg_timer = 0
 	gs.door_unlocked = false
 	gs.door_anim_timer = 0

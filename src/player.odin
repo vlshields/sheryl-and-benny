@@ -8,7 +8,7 @@ import "core:strconv"
 import "core:strings"
 import "vendor:raylib"
 
-PLAYER_SPEED :: 80.0
+PLAYER_SPEED :: 100.0
 ANIM_FRAME_TIME :: 0.15
 STICK_DEADZONE :: 0.25
 SPRITE_SRC_SIZE :: 24
