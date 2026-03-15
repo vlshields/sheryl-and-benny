@@ -22,6 +22,7 @@ DAMAGE_TEXT_TIME       :: 0.8
 DOOR_ANIM_FRAME_TIME   :: 0.2
 
 Game_Phase :: enum {
+	Main_Menu,
 	Character_Select,
 	Playing,
 }
@@ -105,9 +106,18 @@ Game_State :: struct {
 	pause_selection:     i32,
 	pause_submenu:       Pause_Submenu,
 	pause_confirm_selection: i32,
-	render_target:       raylib.RenderTexture2D,
-	screen_scale:        f32,
-	screen_offset:       raylib.Vector2,
+	render_target:         raylib.RenderTexture2D,
+	screen_scale:          f32,
+	screen_offset:         raylib.Vector2,
+	menu_bg_tex:           raylib.Texture2D,
+	menu_scroll_offsets:   [3]f32,
+	menu_floor_tex:        raylib.Texture2D,
+	menu_title_y:          f32,
+	menu_options_x:        f32,
+	menu_main_selection:   i32,
+	menu_sheryl_frame:     i32,
+	menu_benny_frame:      i32,
+	menu_sprite_timer:     f32,
 }
 
 get_virtual_mouse :: proc(gs: ^Game_State) -> raylib.Vector2 {
@@ -224,6 +234,14 @@ void main() {
 `
 	gs.white_flash_shader = raylib.LoadShaderFromMemory(nil, WHITE_FLASH_FS)
 
+	// Load main menu background (3 layers stacked vertically in one image)
+	gs.menu_bg_tex = raylib.LoadTexture("assets/sprites/background.png")
+	gs.menu_floor_tex = raylib.LoadTexture("assets/tiles/arena_floor.png")
+
+	// Init main menu animation state
+	gs.menu_title_y = -60
+	gs.menu_options_x = f32(SCREEN_WIDTH) + 100
+
 	// Find spawn point
 	spawn_x: f32 = 0
 	spawn_y: f32 = 0
@@ -259,6 +277,15 @@ void main() {
 		dt := raylib.GetFrameTime()
 
 		switch gs.phase {
+		case .Main_Menu:
+			action := update_main_menu(&gs)
+			if action == 1 {
+				gs.phase = .Character_Select
+				gs.menu_selection = 0
+			} else if action == 2 {
+				break game_loop
+			}
+
 		case .Character_Select:
 			handle_menu_input(&gs)
 
@@ -387,6 +414,9 @@ void main() {
 		raylib.ClearBackground({20, 16, 30, 255})
 
 		switch gs.phase {
+		case .Main_Menu:
+			draw_main_menu(&gs)
+
 		case .Character_Select:
 			draw_character_select(&gs)
 
@@ -493,6 +523,9 @@ void main() {
 	raylib.UnloadTexture(gs.ammo_tex)
 	raylib.UnloadFont(gs.font)
 	raylib.UnloadShader(gs.white_flash_shader)
+
+	raylib.UnloadTexture(gs.menu_bg_tex)
+	raylib.UnloadTexture(gs.menu_floor_tex)
 
 	dm.destroy_map(&gs.map_data)
 }
