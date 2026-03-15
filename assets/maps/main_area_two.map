@@ -42,13 +42,7 @@ metadata {
 
     }
 
-        t: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0216.png
-          passable:true,
-        collectable:true,
-        other: contains_item=[slinger,flamethrower]
 
-    }
 
             p: {
         tiles:nil
@@ -66,7 +60,7 @@ metadata {
     }
 
         g: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0039.png
+        tiles:/home/pots/acjam/assets/tiles/decorative_rock.png
           passable:true,
         collectable:nil,
         other: nil

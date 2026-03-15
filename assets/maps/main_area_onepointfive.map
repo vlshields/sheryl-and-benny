@@ -88,8 +88,8 @@ metadata {
 
     }
 
-    g: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0044.png
+        g: {
+        tiles:/home/pots/acjam/assets/tiles/decorative_rock.png
           passable:true,
         collectable:nil,
         other: nil
