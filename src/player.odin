@@ -71,8 +71,12 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			using_gamepad = true
 		}
 
+		// If stationary, only fire if already facing the reticle direction
+		gp_stationary := abs(player.move_dir.x) < 0.01 && abs(player.move_dir.y) < 0.01
+		gp_needs_turn := gp_stationary && ((player.aim_dir.x < -0.1 && !player.facing_left) || (player.aim_dir.x > 0.1 && player.facing_left))
+
 		// RT to fire (held for autofire)
-		if raylib.IsGamepadButtonDown(0, .RIGHT_TRIGGER_2) && player.ammo > 0 {
+		if raylib.IsGamepadButtonDown(0, .RIGHT_TRIGGER_2) && player.ammo > 0 && !gp_needs_turn {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 				player.ammo -= 1
@@ -128,8 +132,12 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			player.aim_dir = aim_vec / aim_mag
 		}
 
+		// If stationary, only fire if already facing the reticle direction
+		kb_stationary := player.move_dir.x == 0 && player.move_dir.y == 0
+		kb_needs_turn := kb_stationary && ((player.aim_dir.x < -0.1 && !player.facing_left) || (player.aim_dir.x > 0.1 && player.facing_left))
+
 		// Left click to fire (held for autofire)
-		if raylib.IsMouseButtonDown(.LEFT) && player.ammo > 0 {
+		if raylib.IsMouseButtonDown(.LEFT) && player.ammo > 0 && !kb_needs_turn {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 				player.ammo -= 1
@@ -150,6 +158,38 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 		// Right click to reload (cannot reload while shooting)
 		if raylib.IsMouseButtonPressed(.RIGHT) && player.weapon != .None && !raylib.IsMouseButtonDown(.LEFT) {
 			player.ammo = weapon_max_ammo(player.weapon)
+		}
+	}
+
+	// Face toward reticule when stationary and shooting
+	is_shooting := false
+	if using_gamepad {
+		is_shooting = raylib.IsGamepadButtonDown(0, .RIGHT_TRIGGER_2)
+	} else {
+		is_shooting = raylib.IsMouseButtonDown(.LEFT)
+	}
+
+	if is_shooting && player.move_dir.x == 0 && player.move_dir.y == 0 {
+		if player.aim_dir.x < -0.1 {
+			old_facing := player.facing_left
+			player.facing_left = true
+			if player.weapon != .None && !old_facing {
+				if player.blaster_angle >= 0 {
+					player.blaster_angle = 180 - player.blaster_angle
+				} else {
+					player.blaster_angle = -180 - player.blaster_angle
+				}
+			}
+		} else if player.aim_dir.x > 0.1 {
+			old_facing := player.facing_left
+			player.facing_left = false
+			if player.weapon != .None && old_facing {
+				if player.blaster_angle >= 0 {
+					player.blaster_angle = 180 - player.blaster_angle
+				} else {
+					player.blaster_angle = -180 - player.blaster_angle
+				}
+			}
 		}
 	}
 
