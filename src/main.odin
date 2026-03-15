@@ -971,12 +971,11 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 }
 
 reset_game :: proc(gs: ^Game_State) {
-	// Reset player — preserve identity fields (sprite_sheet, frame_count, etc.)
-	gs.player.pos = gs.spawn_pos
+	// Transition back to the first map
+	transition_to_map(gs, "home_base.map")
+
+	// Reset player state — preserve identity fields (sprite_sheet, frame_count, etc.)
 	gs.player.aim_dir = {0, 0}
-	gs.player.move_dir = {0, 0}
-	gs.player.current_frame = 0
-	gs.player.anim_timer = 0
 	gs.player.facing_left = false
 	gs.player.weapon = .Blaster
 	gs.player.ammo = BLASTER_MAX_AMMO
@@ -984,44 +983,7 @@ reset_game :: proc(gs: ^Game_State) {
 	gs.player.fire_cooldown = 0
 	gs.player.hp = PLAYER_HP
 	gs.player.invincibility_timer = 0
-	gs.player.knockback_vel = {0, 0}
 	gs.player.blaster_recoil = 0
-
-	// Clear projectiles and particles
-	for &proj in gs.projectiles {
-		proj.active = false
-	}
-	for &part in gs.particles {
-		part.active = false
-	}
-	for &fp in gs.flame_particles {
-		fp.active = false
-	}
-	for &beam in gs.laser_beams {
-		beam.active = false
-	}
-
-	// Reset map collected state
-	for &row in gs.map_data.grid {
-		for &cell in row {
-			cell.collected = false
-		}
-	}
-
-	// Re-init enemies
-	for &enemy in gs.enemies {
-		enemy = {}
-	}
-	init_enemies(gs)
-	init_npcs(gs)
-	init_arena(gs)
-
-	for &dt_text in gs.damage_texts {
-		dt_text.active = false
-	}
-	for &crate in gs.health_crates {
-		crate.active = false
-	}
 
 	gs.enemies_cleared = false
 	gs.game_over = false
@@ -1030,10 +992,6 @@ reset_game :: proc(gs: ^Game_State) {
 	gs.boss_victory_selection = 0
 	gs.paused = false
 	gs.pause_submenu = .None
-	gs.door_locked_msg_timer = 0
-	gs.door_unlocked = false
-	gs.door_anim_timer = 0
-	gs.door_anim_frame = 0
 	update_camera(gs)
 }
 
