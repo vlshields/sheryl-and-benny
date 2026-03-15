@@ -91,8 +91,8 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			using_gamepad = true
 		}
 
-		// LB to reload
-		if raylib.IsGamepadButtonPressed(0, .LEFT_TRIGGER_1) && player.weapon != .None {
+		// LB to reload (cannot reload while shooting)
+		if raylib.IsGamepadButtonPressed(0, .LEFT_TRIGGER_1) && player.weapon != .None && !raylib.IsGamepadButtonDown(0, .RIGHT_TRIGGER_2) {
 			player.ammo = weapon_max_ammo(player.weapon)
 			using_gamepad = true
 		}
@@ -147,8 +147,8 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			}
 		}
 
-		// Right click to reload
-		if raylib.IsMouseButtonPressed(.RIGHT) && player.weapon != .None {
+		// Right click to reload (cannot reload while shooting)
+		if raylib.IsMouseButtonPressed(.RIGHT) && player.weapon != .None && !raylib.IsMouseButtonDown(.LEFT) {
 			player.ammo = weapon_max_ammo(player.weapon)
 		}
 	}
