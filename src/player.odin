@@ -47,6 +47,10 @@ Player :: struct {
 get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 	player.move_dir = {0, 0}
 	player.aim_dir = {0, 0}
+	audio := &gs.audio
+
+	// Track whether any weapon loop sound should play this frame
+	firing_loop := false
 
 	// Check gamepad
 	using_gamepad := false
@@ -80,24 +84,40 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 				player.ammo -= 1
+				play_sfx_loop(audio.flamethrower_loop)
+				firing_loop = true
 			} else if player.weapon == .Laser_Gun {
 				update_plasma_beam(player, gs)
 				if player.fire_cooldown <= 0 {
 					player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 					player.ammo -= 1
 				}
+				play_sfx_loop(audio.lasergun_loop)
+				firing_loop = true
 			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 				player.ammo -= 1
+				if player.weapon == .Blaster {
+					play_sfx(audio.blaster_shot)
+				} else if player.weapon == .Slinger {
+					play_sfx_loop(audio.slinger_loop)
+					firing_loop = true
+				}
 			}
 			using_gamepad = true
+		}
+
+		// Out of ammo click
+		if raylib.IsGamepadButtonPressed(0, .RIGHT_TRIGGER_2) && player.ammo <= 0 && player.weapon != .None {
+			play_sfx(audio.out_of_ammo)
 		}
 
 		// LB to reload (cannot reload while shooting)
 		if raylib.IsGamepadButtonPressed(0, .LEFT_TRIGGER_1) && player.weapon != .None && !raylib.IsGamepadButtonDown(0, .RIGHT_TRIGGER_2) {
 			player.ammo = weapon_max_ammo(player.weapon)
+			play_sfx(audio.reload)
 			using_gamepad = true
 		}
 	}
@@ -141,24 +161,53 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 				player.ammo -= 1
+				play_sfx_loop(audio.flamethrower_loop)
+				firing_loop = true
 			} else if player.weapon == .Laser_Gun {
 				update_plasma_beam(player, gs)
 				if player.fire_cooldown <= 0 {
 					player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 					player.ammo -= 1
 				}
+				play_sfx_loop(audio.lasergun_loop)
+				firing_loop = true
 			} else if weapon_can_shoot(player.weapon) && player.fire_cooldown <= 0 {
 				spawn_projectile(player, &gs.projectiles)
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 				player.ammo -= 1
+				if player.weapon == .Blaster {
+					play_sfx(audio.blaster_shot)
+				} else if player.weapon == .Slinger {
+					play_sfx_loop(audio.slinger_loop)
+					firing_loop = true
+				}
 			}
+		}
+
+		// Out of ammo click
+		if raylib.IsMouseButtonPressed(.LEFT) && player.ammo <= 0 && player.weapon != .None {
+			play_sfx(audio.out_of_ammo)
 		}
 
 		// Right click to reload (cannot reload while shooting)
 		if raylib.IsMouseButtonPressed(.RIGHT) && player.weapon != .None && !raylib.IsMouseButtonDown(.LEFT) {
 			player.ammo = weapon_max_ammo(player.weapon)
+			play_sfx(audio.reload)
 		}
+	}
+
+	// Stop weapon loops if not firing this frame
+	if !firing_loop {
+		stop_weapon_loops(audio)
+	}
+
+	// Footsteps
+	is_moving := linalg.length(player.move_dir) > 0.1
+	if is_moving {
+		play_sfx_loop(audio.footsteps)
+	} else {
+		stop_sfx(audio.footsteps)
 	}
 
 	// Face toward reticule when stationary and shooting
@@ -505,7 +554,7 @@ draw_ammo_display :: proc(player: ^Player, ammo_tex: raylib.Texture2D) {
 	}
 }
 
-check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
+check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map, audio: ^Audio_State) {
 	// Get player center tile coords
 	center_x := int(player.pos.x) / TILE_SIZE
 	center_y := int(player.pos.y - f32(SPRITE_DST_SIZE) / 2) / TILE_SIZE
@@ -527,18 +576,21 @@ check_pickup :: proc(player: ^Player, map_data: ^dm.Dot_Map) {
 				player.ammo = weapon_max_ammo(weapon)
 				player.blaster_angle = player.facing_left ? 180.0 : 0.0
 				cell.collected = true
+				play_sfx(audio.item_pickup)
 			}
 
 			heal := parse_heal_amount(td.other)
 			if heal > 0 {
 				player.hp = min(player.hp + heal, PLAYER_HP)
 				cell.collected = true
+				play_sfx(audio.item_pickup)
 			}
 
 			// Key pickup
 			if cell.symbol == 'k' {
 				player.has_key = true
 				cell.collected = true
+				play_sfx(audio.item_pickup)
 			}
 		}
 	}

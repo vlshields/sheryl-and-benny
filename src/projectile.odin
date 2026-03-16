@@ -233,6 +233,7 @@ check_enemy_projectile_player_collision :: proc(gs: ^Game_State) {
 			proj.active = false
 			spawn_impact_particles(proj.pos, &gs.particles)
 			spawn_damage_text(gs, gs.player.pos, proj.damage)
+			play_sfx(gs.audio.hit)
 
 			// Knockback from projectile direction
 			vel_len := linalg.length(proj.vel)

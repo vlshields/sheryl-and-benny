@@ -327,6 +327,7 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 			gs.player.hp -= dmg
 			gs.player.invincibility_timer = PLAYER_INVINCIBILITY_TIME
 			spawn_damage_text(gs, gs.player.pos, dmg)
+			play_sfx(gs.audio.hit)
 
 			// Knockback direction: enemy -> player
 			diff := gs.player.pos - enemy.pos

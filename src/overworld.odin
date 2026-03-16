@@ -374,6 +374,7 @@ spawn_boss :: proc(gs: ^Game_State) {
 			arena.boss_spawned = true
 			arena.boss_fire_cooldown = BOSS_FIRE_COOLDOWN
 			arena.boss_spiral_cooldown = BOSS_SPIRAL_COOLDOWN
+			play_sfx(gs.audio.boss_warcry)
 			return
 		}
 	}
@@ -490,6 +491,7 @@ update_boss :: proc(gs: ^Game_State, dt: f32) {
 			arena.boss_spiral_timer = BOSS_SPIRAL_DURATION
 			arena.boss_spiral_angle = 0
 			arena.boss_fire_cooldown = BOSS_SPIRAL_FIRE_RATE
+			play_sfx(gs.audio.boss_warcry)
 		}
 	}
 

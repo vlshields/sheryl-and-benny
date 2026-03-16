@@ -72,6 +72,7 @@ update_main_menu :: proc(gs: ^Game_State) -> i32 {
 	}
 
 	if confirmed {
+		play_sfx(gs.audio.ui_confirm)
 		if gs.menu_main_selection == 0 {
 			return 1 // Play
 		} else {

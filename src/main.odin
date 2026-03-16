@@ -30,6 +30,7 @@ Game_Phase :: enum {
 Pause_Submenu :: enum {
 	None,
 	Controls,
+	Audio,
 	Quit_Confirm,
 }
 
@@ -106,6 +107,8 @@ Game_State :: struct {
 	pause_selection:     i32,
 	pause_submenu:       Pause_Submenu,
 	pause_confirm_selection: i32,
+	pause_audio_selection:  i32,
+	audio:                 Audio_State,
 	render_target:         raylib.RenderTexture2D,
 	screen_scale:          f32,
 	screen_offset:         raylib.Vector2,
@@ -140,6 +143,8 @@ main :: proc() {
 	raylib.SetTargetFPS(TARGET_FPS)
 
 	gs: Game_State
+	init_audio(&gs.audio)
+	defer destroy_audio(&gs.audio)
 
 	// Setup render target for virtual resolution scaling
 	gs.render_target = raylib.LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -275,6 +280,7 @@ void main() {
 	// Game loop
 	game_loop: for !raylib.WindowShouldClose() {
 		dt := raylib.GetFrameTime()
+		update_music(&gs.audio)
 
 		switch gs.phase {
 		case .Main_Menu:
@@ -300,6 +306,8 @@ void main() {
 					gs.pause_selection = 0
 					gs.pause_submenu = .None
 					gs.pause_confirm_selection = 0
+					stop_weapon_loops(&gs.audio)
+					stop_sfx(gs.audio.footsteps)
 				}
 			}
 
@@ -344,7 +352,7 @@ void main() {
 
 				update_animation(&gs.player, dt)
 
-				check_pickup(&gs.player, &gs.map_data)
+				check_pickup(&gs.player, &gs.map_data, &gs.audio)
 				check_health_crate_pickup(&gs)
 
 				update_npcs(&gs, dt)
@@ -352,6 +360,9 @@ void main() {
 
 				// Check if player is bumping into a locked door
 				if check_door_blocked(&gs.player, &gs.map_data) {
+					if gs.door_locked_msg_timer <= 0 {
+						play_sfx(gs.audio.ui_back)
+					}
 					gs.door_locked_msg_timer = 2.0
 				}
 				if gs.door_locked_msg_timer > 0 {
@@ -384,11 +395,17 @@ void main() {
 
 				if gs.player.hp <= 0 {
 					gs.game_over = true
+					stop_weapon_loops(&gs.audio)
+					stop_sfx(gs.audio.footsteps)
+					stop_sfx(gs.audio.boss_warcry)
 				}
 
 				if gs.arena.boss_defeated && !gs.boss_victory {
 					gs.boss_victory = true
 					gs.boss_victory_selection = 0
+					stop_weapon_loops(&gs.audio)
+					stop_sfx(gs.audio.footsteps)
+					stop_sfx(gs.audio.boss_warcry)
 				}
 
 				update_camera(&gs)
@@ -547,6 +564,7 @@ handle_menu_input :: proc(gs: ^Game_State) {
 	}
 
 	if confirmed {
+		play_sfx(gs.audio.ui_confirm)
 		init_player(gs)
 		update_camera(gs)
 		gs.phase = .Playing
@@ -640,6 +658,7 @@ handle_game_over_input :: proc(gs: ^Game_State) -> i32 {
 	}
 
 	if confirmed {
+		play_sfx(gs.audio.ui_confirm)
 		return gs.game_over_selection == 0 ? 1 : 2
 	}
 	return 0
@@ -711,6 +730,7 @@ handle_boss_victory_input :: proc(gs: ^Game_State) -> i32 {
 	}
 
 	if confirmed {
+		play_sfx(gs.audio.ui_confirm)
 		return gs.boss_victory_selection == 0 ? 1 : 2
 	}
 	return 0
@@ -769,18 +789,18 @@ handle_pause_input :: proc(gs: ^Game_State) -> i32 {
 	switch gs.pause_submenu {
 	case .None:
 		if raylib.IsKeyPressed(.DOWN) || raylib.IsKeyPressed(.S) {
-			gs.pause_selection = (gs.pause_selection + 1) % 3
+			gs.pause_selection = (gs.pause_selection + 1) % 4
 		}
 		if raylib.IsKeyPressed(.UP) || raylib.IsKeyPressed(.W) {
-			gs.pause_selection = (gs.pause_selection + 2) % 3
+			gs.pause_selection = (gs.pause_selection + 3) % 4
 		}
 
 		if raylib.IsGamepadAvailable(0) {
 			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) {
-				gs.pause_selection = (gs.pause_selection + 1) % 3
+				gs.pause_selection = (gs.pause_selection + 1) % 4
 			}
 			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_UP) {
-				gs.pause_selection = (gs.pause_selection + 2) % 3
+				gs.pause_selection = (gs.pause_selection + 3) % 4
 			}
 		}
 
@@ -790,12 +810,16 @@ handle_pause_input :: proc(gs: ^Game_State) -> i32 {
 		}
 
 		if confirmed {
+			play_sfx(gs.audio.ui_confirm)
 			switch gs.pause_selection {
 			case 0:
 				return 1 // Continue
 			case 1:
 				gs.pause_submenu = .Controls
 			case 2:
+				gs.pause_submenu = .Audio
+				gs.pause_audio_selection = 0
+			case 3:
 				gs.pause_submenu = .Quit_Confirm
 				gs.pause_confirm_selection = 1 // Default to "No"
 			}
@@ -807,6 +831,70 @@ handle_pause_input :: proc(gs: ^Game_State) -> i32 {
 			back = true
 		}
 		if back {
+			play_sfx(gs.audio.ui_back)
+			gs.pause_submenu = .None
+		}
+
+	case .Audio:
+		// 0=music, 1=sfx, 2=back
+		if raylib.IsKeyPressed(.DOWN) || raylib.IsKeyPressed(.S) {
+			gs.pause_audio_selection = (gs.pause_audio_selection + 1) % 3
+		}
+		if raylib.IsKeyPressed(.UP) || raylib.IsKeyPressed(.W) {
+			gs.pause_audio_selection = (gs.pause_audio_selection + 2) % 3
+		}
+
+		if raylib.IsGamepadAvailable(0) {
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) {
+				gs.pause_audio_selection = (gs.pause_audio_selection + 1) % 3
+			}
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_UP) {
+				gs.pause_audio_selection = (gs.pause_audio_selection + 2) % 3
+			}
+		}
+
+		// Left/right to adjust volume
+		VOLUME_STEP :: f32(0.1)
+		adjust: f32 = 0
+		if raylib.IsKeyPressed(.LEFT) || raylib.IsKeyPressed(.A) {
+			adjust = -VOLUME_STEP
+		}
+		if raylib.IsKeyPressed(.RIGHT) || raylib.IsKeyPressed(.D) {
+			adjust = VOLUME_STEP
+		}
+		if raylib.IsGamepadAvailable(0) {
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_LEFT) {
+				adjust = -VOLUME_STEP
+			}
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_RIGHT) {
+				adjust = VOLUME_STEP
+			}
+		}
+
+		if adjust != 0 {
+			switch gs.pause_audio_selection {
+			case 0:
+				gs.audio.music_volume = clamp(gs.audio.music_volume + adjust, 0, 1)
+			case 1:
+				gs.audio.sfx_volume = clamp(gs.audio.sfx_volume + adjust, 0, 1)
+			}
+			apply_audio_volumes(&gs.audio)
+		}
+
+		// Back via escape
+		if raylib.IsKeyPressed(.ESCAPE) {
+			play_sfx(gs.audio.ui_back)
+			gs.pause_submenu = .None
+			return 0
+		}
+
+		// Confirm on back button
+		confirmed := raylib.IsKeyPressed(.ENTER) || raylib.IsKeyPressed(.SPACE)
+		if raylib.IsGamepadAvailable(0) && raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) {
+			confirmed = true
+		}
+		if confirmed && gs.pause_audio_selection == 2 {
+			play_sfx(gs.audio.ui_back)
 			gs.pause_submenu = .None
 		}
 
@@ -822,6 +910,7 @@ handle_pause_input :: proc(gs: ^Game_State) -> i32 {
 
 		back := raylib.IsKeyPressed(.ESCAPE)
 		if back {
+			play_sfx(gs.audio.ui_back)
 			gs.pause_submenu = .None
 			return 0
 		}
@@ -831,6 +920,7 @@ handle_pause_input :: proc(gs: ^Game_State) -> i32 {
 			confirmed = true
 		}
 		if confirmed {
+			play_sfx(gs.audio.ui_confirm)
 			if gs.pause_confirm_selection == 0 {
 				return 2 // Quit
 			} else {
@@ -848,7 +938,7 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 	switch gs.pause_submenu {
 	case .None:
 		PANEL_W :: 220
-		PANEL_H :: 160
+		PANEL_H :: 190
 		PANEL_X :: (SCREEN_WIDTH - PANEL_W) / 2
 		PANEL_Y :: (SCREEN_HEIGHT - PANEL_H) / 2
 
@@ -867,9 +957,9 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 		raylib.DrawTextEx(gs.font, "PAUSED", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
 
 		option_size: f32 = 20
-		options := [3]cstring{"CONTINUE", "CONTROLS", "QUIT"}
+		options := [4]cstring{"CONTINUE", "CONTROLS", "AUDIO", "QUIT"}
 
-		for i: i32 = 0; i < 3; i += 1 {
+		for i: i32 = 0; i < 4; i += 1 {
 			opt_w := raylib.MeasureTextEx(gs.font, options[i], option_size, 1).x
 			opt_x := f32(PANEL_X) + (f32(PANEL_W) - opt_w) / 2
 			opt_y := f32(PANEL_Y) + 55 + f32(i) * 30
@@ -927,6 +1017,98 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 		back_y := f32(PANEL_Y) + f32(PANEL_H) - 32
 		raylib.DrawTextEx(gs.font, "> BACK", {back_x - 18, back_y}, back_size, 1, {255, 220, 50, 255})
 
+	case .Audio:
+		PANEL_W :: 260
+		PANEL_H :: 160
+		PANEL_X :: (SCREEN_WIDTH - PANEL_W) / 2
+		PANEL_Y :: (SCREEN_HEIGHT - PANEL_H) / 2
+
+		raylib.DrawRectangle(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, {20, 16, 30, 240})
+		raylib.DrawRectangleLinesEx(
+			{f32(PANEL_X), f32(PANEL_Y), f32(PANEL_W), f32(PANEL_H)},
+			2,
+			{200, 180, 220, 255},
+		)
+
+		title_size: f32 = 22
+		title_w := raylib.MeasureTextEx(gs.font, "AUDIO", title_size, 1).x
+		title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
+		title_y := f32(PANEL_Y) + 10
+		raylib.DrawTextEx(gs.font, "AUDIO", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
+
+		label_size: f32 = 14
+		lx: f32 = f32(PANEL_X) + 20
+		label_color := raylib.Color{180, 180, 180, 255}
+		selected_color := raylib.Color{255, 220, 50, 255}
+
+		SLIDER_X :: f32(PANEL_X) + 100
+		SLIDER_W :: f32(120)
+		SLIDER_H :: f32(8)
+		KNOB_R :: f32(5)
+
+		// Music volume slider
+		{
+			y: f32 = f32(PANEL_Y) + 50
+			color: raylib.Color = gs.pause_audio_selection == 0 ? selected_color : label_color
+			if gs.pause_audio_selection == 0 {
+				raylib.DrawTextEx(gs.font, ">", {lx - 14, y - 2}, label_size, 1, color)
+			}
+			raylib.DrawTextEx(gs.font, "MUSIC", {lx, y - 2}, label_size, 1, color)
+
+			// Slider track
+			track_y := y + 2
+			raylib.DrawRectangleRounded({SLIDER_X, track_y, SLIDER_W, SLIDER_H}, 0.5, 4, {60, 50, 80, 255})
+
+			// Filled portion
+			fill_w := SLIDER_W * gs.audio.music_volume
+			if fill_w > 0 {
+				raylib.DrawRectangleRounded({SLIDER_X, track_y, fill_w, SLIDER_H}, 0.5, 4, color)
+			}
+
+			// Knob
+			knob_x := SLIDER_X + fill_w
+			knob_y := track_y + SLIDER_H / 2
+			raylib.DrawCircleV({knob_x, knob_y}, KNOB_R, color)
+		}
+
+		// SFX volume slider
+		{
+			y: f32 = f32(PANEL_Y) + 80
+			color: raylib.Color = gs.pause_audio_selection == 1 ? selected_color : label_color
+			if gs.pause_audio_selection == 1 {
+				raylib.DrawTextEx(gs.font, ">", {lx - 14, y - 2}, label_size, 1, color)
+			}
+			raylib.DrawTextEx(gs.font, "SFX", {lx, y - 2}, label_size, 1, color)
+
+			// Slider track
+			track_y := y + 2
+			raylib.DrawRectangleRounded({SLIDER_X, track_y, SLIDER_W, SLIDER_H}, 0.5, 4, {60, 50, 80, 255})
+
+			// Filled portion
+			fill_w := SLIDER_W * gs.audio.sfx_volume
+			if fill_w > 0 {
+				raylib.DrawRectangleRounded({SLIDER_X, track_y, fill_w, SLIDER_H}, 0.5, 4, color)
+			}
+
+			// Knob
+			knob_x := SLIDER_X + fill_w
+			knob_y := track_y + SLIDER_H / 2
+			raylib.DrawCircleV({knob_x, knob_y}, KNOB_R, color)
+		}
+
+		// Back button
+		{
+			back_size: f32 = 16
+			back_color: raylib.Color = gs.pause_audio_selection == 2 ? selected_color : label_color
+			back_w := raylib.MeasureTextEx(gs.font, "BACK", back_size, 1).x
+			back_x := f32(PANEL_X) + (f32(PANEL_W) - back_w) / 2
+			back_y := f32(PANEL_Y) + f32(PANEL_H) - 32
+			if gs.pause_audio_selection == 2 {
+				raylib.DrawTextEx(gs.font, ">", {back_x - 18, back_y}, back_size, 1, back_color)
+			}
+			raylib.DrawTextEx(gs.font, "BACK", {back_x, back_y}, back_size, 1, back_color)
+		}
+
 	case .Quit_Confirm:
 		PANEL_W :: 240
 		PANEL_H :: 130
@@ -971,6 +1153,9 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 }
 
 reset_game :: proc(gs: ^Game_State) {
+	stop_weapon_loops(&gs.audio)
+	stop_sfx(gs.audio.footsteps)
+
 	// Transition back to the first map
 	transition_to_map(gs, "home_base.map")
 
@@ -1056,6 +1241,12 @@ check_door_transition :: proc(gs: ^Game_State) -> string {
 }
 
 transition_to_map :: proc(gs: ^Game_State, map_name: string) {
+	stop_weapon_loops(&gs.audio)
+	stop_sfx(gs.audio.footsteps)
+
+	// Switch music based on destination map
+	switch_music(&gs.audio, map_name == "arena.map")
+
 	// Build path relative to current map directory
 	map_path := strings.concatenate({"assets/maps/", map_name})
 	defer delete(map_path)
@@ -1204,6 +1395,7 @@ check_health_crate_pickup :: proc(gs: ^Game_State) {
 		   py < crate.pos.y + cs && py + ps > crate.pos.y {
 			gs.player.hp = min(gs.player.hp + HEALTH_CRATE_HEAL, PLAYER_HP)
 			crate.active = false
+			play_sfx(gs.audio.item_pickup)
 		}
 	}
 }
