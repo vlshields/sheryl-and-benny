@@ -1,12 +1,16 @@
 
 MAP_START
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-xwwwwwwwwwwwwwwwwwwwwwwwwppwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
-xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwnwwwwwwwwwwwwwwwwwwwx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwppwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwnwwwwwwxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxx
-dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxxxxxxxxxx
-dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxxxxxxxxxx
+xxxdDxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 MAP_END
 
@@ -33,10 +37,18 @@ metadata {
     }
 
     d: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0140.png,
+        tiles:/home/pots/acjam/assets/tiles/door_left_side_bottom.png,
           passable:true,
         collectable:false,
-        other: to_room=pavilion.map, condition=nil
+        other: to_room=pavilion.map
+
+    }
+
+        D: {
+        tiles:/home/pots/acjam/assets/tiles/door_right_side_bottom.png,
+          passable:true,
+        collectable:false,
+        other: to_room=pavilion.map
 
     }
 

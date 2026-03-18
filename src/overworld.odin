@@ -363,6 +363,7 @@ spawn_boss :: proc(gs: ^Game_State) {
 			enemy = Enemy {
 				pos          = boss_pos,
 				hp           = BOSS_HP,
+				max_hp       = BOSS_HP,
 				kind         = .Boss,
 				sprite_sheet = gs.boss_move_tex,
 				dead_tex     = gs.boss_move_tex,

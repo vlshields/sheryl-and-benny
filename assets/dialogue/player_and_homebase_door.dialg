@@ -1,0 +1,7 @@
+*This dialogue scene occurs if the player has not interacted with Bozzo*
+[START]
+DOOR: It is recommended that you speak with Bozzo to get debriefed on your mission.
+[PRESS ENTER]
+DOOR: Do you want to continue?
+[GO BACK] [SKIP TUTORIAL]
+[END]

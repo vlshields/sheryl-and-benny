@@ -7,6 +7,7 @@ import "core:strings"
 import "vendor:raylib"
 
 MAX_DIALOGUE_LINES :: 32
+MAX_CHOICES :: 4
 WORD_REVEAL_INTERVAL :: 0.07
 NPC_INTERACT_DIST :: 24.0
 
@@ -17,20 +18,24 @@ DIALOGUE_TEXT_SIZE: f32 : 12
 DIALOGUE_SPEAKER_SIZE: f32 : 16
 
 Dialogue_Line :: struct {
-	speaker: string,
-	text:    string,
+	speaker:      string,
+	text:         string,
+	choices:      [MAX_CHOICES]string,
+	choice_count: int,
 }
 
 Dialogue_State :: struct {
-	lines:          [MAX_DIALOGUE_LINES]Dialogue_Line,
-	line_count:     int,
-	current_line:   int,
-	active:         bool,
-	words_revealed: int,
-	word_timer:     f32,
-	word_count:     int,
-	loaded:         bool,
-	completed:      bool,
+	lines:            [MAX_DIALOGUE_LINES]Dialogue_Line,
+	line_count:       int,
+	current_line:     int,
+	active:           bool,
+	words_revealed:   int,
+	word_timer:       f32,
+	word_count:       int,
+	loaded:           bool,
+	completed:        bool,
+	selected_choice:  int,
+	chosen:           int,
 }
 
 parse_dialogue_file :: proc(path: string) -> (state: Dialogue_State, ok: bool) {
@@ -91,6 +96,45 @@ parse_dialogue_file :: proc(path: string) -> (state: Dialogue_State, ok: bool) {
 			continue
 		}
 
+		// Check for choice line: [CHOICE1] [CHOICE2] ...
+		if trimmed[0] == '[' && trimmed != "[START]" && trimmed != "[END]" && trimmed != "[PRESS ENTER]" {
+			// Flush current text as a line first
+			if has_content && line_idx < MAX_DIALOGUE_LINES {
+				state.lines[line_idx] = Dialogue_Line {
+					speaker = strings.clone(current_speaker),
+					text    = strings.clone(strings.to_string(current_text)),
+				}
+				line_idx += 1
+				strings.builder_destroy(&current_text)
+				current_text = {}
+				has_content = false
+			}
+			// Parse choices from brackets
+			if line_idx < MAX_DIALOGUE_LINES {
+				choice_line: Dialogue_Line
+				choice_line.speaker = strings.clone(current_speaker)
+				choice_line.text = ""
+				remaining := trimmed
+				for choice_line.choice_count < MAX_CHOICES {
+					open := strings.index(remaining, "[")
+					if open < 0 {
+						break
+					}
+					close := strings.index(remaining[open:], "]")
+					if close < 0 {
+						break
+					}
+					choice_text := remaining[open + 1:open + close]
+					choice_line.choices[choice_line.choice_count] = strings.clone(choice_text)
+					choice_line.choice_count += 1
+					remaining = remaining[open + close + 1:]
+				}
+				state.lines[line_idx] = choice_line
+				line_idx += 1
+			}
+			continue
+		}
+
 		// Parse "SPEAKER: text"
 		colon_idx := strings.index(trimmed, ": ")
 		if colon_idx >= 0 {
@@ -118,11 +162,50 @@ start_dialogue :: proc(dialogue: ^Dialogue_State) {
 	dialogue.words_revealed = 0
 	dialogue.word_timer = 0
 	dialogue.completed = false
+	dialogue.selected_choice = 0
+	dialogue.chosen = -1
 	dialogue.word_count = count_words(dialogue.lines[0].text)
 }
 
 update_dialogue :: proc(dialogue: ^Dialogue_State, dt: f32, audio: ^Audio_State) {
 	if !dialogue.active {
+		return
+	}
+
+	cur_line := dialogue.lines[dialogue.current_line]
+	has_choices := cur_line.choice_count > 0
+
+	// Choice lines: handle left/right selection and confirm
+	if has_choices {
+		move_left := raylib.IsKeyPressed(.LEFT) || raylib.IsKeyPressed(.A)
+		move_right := raylib.IsKeyPressed(.RIGHT) || raylib.IsKeyPressed(.D)
+		if raylib.IsGamepadAvailable(0) {
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_LEFT) {
+				move_left = true
+			}
+			if raylib.IsGamepadButtonPressed(0, .LEFT_FACE_RIGHT) {
+				move_right = true
+			}
+		}
+		if move_left && dialogue.selected_choice > 0 {
+			dialogue.selected_choice -= 1
+			play_sfx(audio.ui_back)
+		}
+		if move_right && dialogue.selected_choice < cur_line.choice_count - 1 {
+			dialogue.selected_choice += 1
+			play_sfx(audio.ui_back)
+		}
+
+		confirm := raylib.IsKeyPressed(.ENTER) || raylib.IsKeyPressed(.E) || raylib.IsKeyPressed(.SPACE)
+		if raylib.IsGamepadAvailable(0) && raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) {
+			confirm = true
+		}
+		if confirm {
+			play_sfx(audio.ui_confirm)
+			dialogue.chosen = dialogue.selected_choice
+			dialogue.active = false
+			dialogue.completed = true
+		}
 		return
 	}
 
@@ -149,6 +232,7 @@ update_dialogue :: proc(dialogue: ^Dialogue_State, dt: f32, audio: ^Audio_State)
 			}
 			dialogue.words_revealed = 0
 			dialogue.word_timer = 0
+			dialogue.selected_choice = 0
 			dialogue.word_count = count_words(dialogue.lines[dialogue.current_line].text)
 		}
 		return
@@ -164,7 +248,7 @@ update_dialogue :: proc(dialogue: ^Dialogue_State, dt: f32, audio: ^Audio_State)
 	}
 }
 
-draw_dialogue :: proc(dialogue: ^Dialogue_State, fonts: ^[Font_Size]raylib.Font) {
+draw_dialogue :: proc(dialogue: ^Dialogue_State, font: raylib.Font) {
 	if !dialogue.active {
 		return
 	}
@@ -191,7 +275,7 @@ draw_dialogue :: proc(dialogue: ^Dialogue_State, fonts: ^[Font_Size]raylib.Font)
 	speaker_cstr := strings.clone_to_cstring(line.speaker)
 	defer delete(speaker_cstr)
 	raylib.DrawTextEx(
-		fonts[.S16],
+		font,
 		speaker_cstr,
 		{box_x + f32(DIALOGUE_BOX_MARGIN), box_y + 6},
 		DIALOGUE_SPEAKER_SIZE,
@@ -209,10 +293,12 @@ draw_dialogue :: proc(dialogue: ^Dialogue_State, fonts: ^[Font_Size]raylib.Font)
 	text_y := box_y + 28
 	max_w := f32(DIALOGUE_BOX_W) - f32(DIALOGUE_BOX_MARGIN) * 2
 
-	draw_wrapped_text(fonts[.S12], revealed_cstr, text_x, text_y, max_w, DIALOGUE_TEXT_SIZE, text_color)
+	draw_wrapped_text(font, revealed_cstr, text_x, text_y, max_w, DIALOGUE_TEXT_SIZE, text_color)
 
-	// "Press ENTER" prompt when all words revealed
-	if dialogue.words_revealed >= dialogue.word_count {
+	// Choice buttons or "Press ENTER" prompt
+	if line.choice_count > 0 {
+		draw_dialogue_choices(dialogue, font, box_x, box_y)
+	} else if dialogue.words_revealed >= dialogue.word_count {
 		prompt_size: f32 = 12
 		pulse_alpha := u8(150 + i32(105 * math.sin(f32(raylib.GetTime()) * 3.0)))
 		if pulse_alpha < 150 {
@@ -221,7 +307,7 @@ draw_dialogue :: proc(dialogue: ^Dialogue_State, fonts: ^[Font_Size]raylib.Font)
 		prompt_color := raylib.Color{180, 180, 180, pulse_alpha}
 		prompt_x := box_x + f32(DIALOGUE_BOX_W) - 90
 		prompt_y := box_y + f32(DIALOGUE_BOX_H) - 18
-		raylib.DrawTextEx(fonts[.S12], "[ENTER]", {prompt_x, prompt_y}, prompt_size, 1, prompt_color)
+		raylib.DrawTextEx(font, "[ENTER]", {prompt_x, prompt_y}, prompt_size, 1, prompt_color)
 	}
 }
 
@@ -331,10 +417,58 @@ draw_wrapped_text :: proc(
 	}
 }
 
+draw_dialogue_choices :: proc(dialogue: ^Dialogue_State, font: raylib.Font, box_x: f32, box_y: f32) {
+	line := dialogue.lines[dialogue.current_line]
+	choice_size: f32 = 12
+	choice_y := box_y + f32(DIALOGUE_BOX_H) - 22
+	padding: f32 = 16
+	gap: f32 = 12
+
+	// Measure total width to center choices
+	total_w: f32 = 0
+	for i := 0; i < line.choice_count; i += 1 {
+		label := strings.clone_to_cstring(line.choices[i])
+		defer delete(label)
+		total_w += raylib.MeasureTextEx(font, label, choice_size, 1).x + padding * 2
+		if i < line.choice_count - 1 {
+			total_w += gap
+		}
+	}
+
+	cur_x := box_x + (f32(DIALOGUE_BOX_W) - total_w) / 2
+
+	for i := 0; i < line.choice_count; i += 1 {
+		label := strings.clone_to_cstring(line.choices[i])
+		defer delete(label)
+		text_w := raylib.MeasureTextEx(font, label, choice_size, 1).x
+		btn_w := text_w + padding * 2
+		btn_h: f32 = 18
+
+		selected := i == dialogue.selected_choice
+		bg := raylib.Color{255, 220, 50, 220} if selected else raylib.Color{60, 50, 80, 200}
+		text_col := raylib.Color{15, 12, 25, 255} if selected else raylib.Color{200, 190, 220, 255}
+
+		raylib.DrawRectangleRounded({cur_x, choice_y, btn_w, btn_h}, 0.3, 4, bg)
+		raylib.DrawTextEx(
+			font,
+			label,
+			{cur_x + padding, choice_y + 3},
+			choice_size,
+			1,
+			text_col,
+		)
+
+		cur_x += btn_w + gap
+	}
+}
+
 destroy_dialogue :: proc(dialogue: ^Dialogue_State) {
 	for i := 0; i < dialogue.line_count; i += 1 {
 		delete(dialogue.lines[i].speaker)
 		delete(dialogue.lines[i].text)
+		for j := 0; j < dialogue.lines[i].choice_count; j += 1 {
+			delete(dialogue.lines[i].choices[j])
+		}
 	}
 	dialogue^ = {}
 }

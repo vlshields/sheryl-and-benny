@@ -32,9 +32,14 @@ Enemy_Kind :: enum {
 	Boss,
 }
 
+ENEMY_HP_BAR_W :: 12
+ENEMY_HP_BAR_H :: 2
+ENEMY_HP_BAR_Y_OFFSET :: 2
+
 Enemy :: struct {
 	pos:                raylib.Vector2,
 	hp:                 i32,
+	max_hp:             i32,
 	kind:               Enemy_Kind,
 	sprite_sheet:       raylib.Texture2D,
 	dead_tex:           raylib.Texture2D,
@@ -77,6 +82,7 @@ init_enemies :: proc(gs: ^Game_State) {
 				gs.enemies[enemy_idx] = Enemy {
 					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
 					hp           = ENEMY_HP,
+					max_hp       = ENEMY_HP,
 					kind         = .Slug,
 					sprite_sheet = gs.slug_move_tex,
 					dead_tex     = gs.slug_dead_tex,
@@ -89,6 +95,7 @@ init_enemies :: proc(gs: ^Game_State) {
 				gs.enemies[enemy_idx] = Enemy {
 					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
 					hp           = CRAZY_BUNNY_HP,
+					max_hp       = CRAZY_BUNNY_HP,
 					kind         = .Crazy_Bunny,
 					sprite_sheet = gs.bunny_move_tex,
 					dead_tex     = gs.bunny_dead_tex,
@@ -101,6 +108,7 @@ init_enemies :: proc(gs: ^Game_State) {
 				gs.enemies[enemy_idx] = Enemy {
 					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
 					hp           = FLY_HP,
+					max_hp       = FLY_HP,
 					kind         = .Fly,
 					sprite_sheet = gs.fly_move_tex,
 					dead_tex     = gs.fly_dead_tex,
@@ -363,7 +371,6 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 			knockback: f32 = enemy.kind == .Boss ? BOSS_KNOCKBACK : ENEMY_KNOCKBACK
 			gs.player.hp -= dmg
 			gs.player.invincibility_timer = PLAYER_INVINCIBILITY_TIME
-			spawn_damage_text(gs, gs.player.pos, dmg)
 			play_sfx(gs.audio.hit)
 
 			// Knockback direction: enemy -> player (and player -> enemy)
@@ -439,11 +446,11 @@ draw_boss_hp_bar :: proc(gs: ^Game_State) {
 
 	// Draw boss name above bar
 	name_size: f32 = 14
-	name_w := raylib.MeasureTextEx(gs.fonts[.S14], "Donald Monroe", name_size, 1).x
+	name_w := raylib.MeasureTextEx(gs.font, "Donald Monroe", name_size, 1).x
 	name_x := (f32(SCREEN_WIDTH) - name_w) / 2
 	name_y := f32(BAR_Y) - 16
 	raylib.DrawTextEx(
-		gs.fonts[.S14],
+		gs.font,
 		"Donald Monroe",
 		{name_x, name_y},
 		name_size,
@@ -518,6 +525,16 @@ draw_enemies :: proc(gs: ^Game_State) {
 		raylib.DrawTexturePro(enemy.sprite_sheet, src, dst, {0, 0}, 0, raylib.WHITE)
 		if enemy.flash_timer > 0 {
 			raylib.EndShaderMode()
+		}
+
+		// Draw HP bar above enemy (skip boss, it has its own bar)
+		if enemy.kind != .Boss && enemy.hp < enemy.max_hp {
+			bar_x := enemy.pos.x + f32(SPRITE_DST_SIZE) / 2 - f32(ENEMY_HP_BAR_W) / 2
+			bar_y := enemy.pos.y - ENEMY_HP_BAR_Y_OFFSET
+			fill_ratio := f32(enemy.hp) / f32(enemy.max_hp)
+			fill_w := i32(f32(ENEMY_HP_BAR_W) * fill_ratio)
+			raylib.DrawRectangle(i32(bar_x), i32(bar_y), ENEMY_HP_BAR_W, ENEMY_HP_BAR_H, {0, 0, 0, 180})
+			raylib.DrawRectangle(i32(bar_x), i32(bar_y), fill_w, ENEMY_HP_BAR_H, {220, 40, 40, 255})
 		}
 	}
 }

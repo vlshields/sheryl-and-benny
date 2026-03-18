@@ -232,7 +232,6 @@ check_enemy_projectile_player_collision :: proc(gs: ^Game_State) {
 			gs.player.invincibility_timer = PLAYER_INVINCIBILITY_TIME
 			proj.active = false
 			spawn_impact_particles(proj.pos, &gs.particles)
-			spawn_damage_text(gs, gs.player.pos, proj.damage)
 			play_sfx(gs.audio.hit)
 
 			// Knockback from projectile direction
@@ -536,7 +535,6 @@ update_plasma_beam :: proc(player: ^Player, gs: ^Game_State) {
 			enemy.hp -= LASER_GUN_DAMAGE
 			enemy.flash_timer = ENEMY_FLASH_TIME
 			enemy.flame_damage_timer = PLASMA_DAMAGE_TICK
-			spawn_damage_text(gs, enemy.pos, LASER_GUN_DAMAGE)
 			spawn_plasma_impact_particles(hit_pos, &gs.particles)
 
 			if enemy.hp <= 0 {

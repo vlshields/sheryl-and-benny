@@ -266,7 +266,7 @@ update_blaster_angle :: proc(player: ^Player) {
 	}
 }
 
-move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemies_cleared: bool) {
+move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemies_cleared: bool, dialogue_done: bool = false) {
 	// Apply and decay knockback
 	if linalg.length(player.knockback_vel) > KNOCKBACK_MIN {
 		kb := player.knockback_vel * dt
@@ -280,6 +280,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 			map_data,
 			enemies_cleared,
 			player.has_key,
+			dialogue_done,
 		) {
 			player.pos.x = new_kx
 		}
@@ -292,6 +293,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 			map_data,
 			enemies_cleared,
 			player.has_key,
+			dialogue_done,
 		) {
 			player.pos.y = new_ky
 		}
@@ -326,6 +328,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 		map_data,
 		enemies_cleared,
 		player.has_key,
+		dialogue_done,
 	) {
 		player.pos.x = new_x
 	}
@@ -340,6 +343,7 @@ move_and_collide :: proc(player: ^Player, map_data: ^dm.Dot_Map, dt: f32, enemie
 		map_data,
 		enemies_cleared,
 		player.has_key,
+		dialogue_done,
 	) {
 		player.pos.y = new_y
 	}
@@ -365,6 +369,7 @@ check_collision :: proc(
 	map_data: ^dm.Dot_Map,
 	enemies_cleared: bool,
 	has_key: bool = false,
+	dialogue_done: bool = false,
 ) -> bool {
 	// Check all four corners of the rect
 	corners := [4]raylib.Vector2{{x, y}, {x + w, y}, {x, y + h}, {x + w, y + h}}
@@ -401,6 +406,9 @@ check_collision :: proc(
 				return true
 			}
 			if strings.contains(td.condition, "has_key") && !has_key {
+				return true
+			}
+			if strings.contains(td.condition, ".dialg") && !dialogue_done {
 				return true
 			}
 		} else {
@@ -678,7 +686,7 @@ weapon_max_ammo :: proc(kind: Weapon_Kind) -> i32 {
 	return 0
 }
 
-check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {
+check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map, dialogue_done: bool = false) -> bool {
 	if player.move_dir.x == 0 && player.move_dir.y == 0 {
 		return false
 	}
@@ -697,6 +705,9 @@ check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {
 	cell := map_data.grid[ty][tx]
 	if td, ok := map_data.metadata[cell.symbol]; ok {
 		if strings.contains(td.condition, "has_key") && !player.has_key {
+			return true
+		}
+		if strings.contains(td.condition, ".dialg") && !dialogue_done {
 			return true
 		}
 	}

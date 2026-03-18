@@ -167,9 +167,9 @@ draw_main_menu :: proc(gs: ^Game_State) {
 	{
 		title_size: f32 = 32
 		title_text: cstring = "Sheryl and Benny"
-		title_w := raylib.MeasureTextEx(gs.fonts[.S32], title_text, title_size, 1).x
+		title_w := raylib.MeasureTextEx(gs.font, title_text, title_size, 1).x
 		title_x := (f32(SCREEN_WIDTH) - title_w) / 2
-		raylib.DrawTextEx(gs.fonts[.S32], title_text, {title_x, gs.menu_title_y}, title_size, 1, {255, 220, 50, 255})
+		raylib.DrawTextEx(gs.font, title_text, {title_x, gs.menu_title_y}, title_size, 1, {255, 220, 50, 255})
 	}
 
 	// Draw menu options sliding in from right
@@ -180,9 +180,9 @@ draw_main_menu :: proc(gs: ^Game_State) {
 			y: f32 = 200 + f32(i) * 35
 			color: raylib.Color = gs.menu_main_selection == i ? {255, 220, 50, 255} : {180, 180, 180, 255}
 			if gs.menu_main_selection == i {
-				raylib.DrawTextEx(gs.fonts[.S22], ">", {gs.menu_options_x - 18, y}, option_size, 1, color)
+				raylib.DrawTextEx(gs.font, ">", {gs.menu_options_x - 18, y}, option_size, 1, color)
 			}
-			raylib.DrawTextEx(gs.fonts[.S22], options[i], {gs.menu_options_x, y}, option_size, 1, color)
+			raylib.DrawTextEx(gs.font, options[i], {gs.menu_options_x, y}, option_size, 1, color)
 		}
 	}
 }
