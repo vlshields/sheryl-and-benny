@@ -12,6 +12,7 @@ ENEMY_DAMAGE :: 7
 ENEMY_HP :: 14
 ENEMY_KNOCKBACK :: 150.0
 ENEMY_FLASH_TIME :: 0.12
+ENEMY_HIT_KNOCKBACK :: 120.0
 
 FLY_HP :: 24
 FLY_SPEED :: 30.0
@@ -48,6 +49,7 @@ Enemy :: struct {
 	fire_cooldown:      f32,
 	flame_damage_timer: f32,
 	activated:          bool,
+	knockback_vel:      raylib.Vector2,
 }
 
 init_enemies :: proc(gs: ^Game_State) {
@@ -197,6 +199,41 @@ update_enemies :: proc(gs: ^Game_State, dt: f32) {
 			enemy.activated = true
 		}
 
+		// Apply and decay knockback
+		if linalg.length(enemy.knockback_vel) > KNOCKBACK_MIN {
+			kb := enemy.knockback_vel * dt
+			inset: f32 = 1.0
+
+			new_kx := enemy.pos.x + kb.x
+			if !check_collision(
+				new_kx + inset,
+				enemy.pos.y + inset,
+				size - inset * 2,
+				size - inset * 2,
+				&gs.map_data,
+				false,
+			) {
+				enemy.pos.x = new_kx
+			}
+
+			new_ky := enemy.pos.y + kb.y
+			if !check_collision(
+				enemy.pos.x + inset,
+				new_ky + inset,
+				size - inset * 2,
+				size - inset * 2,
+				&gs.map_data,
+				false,
+			) {
+				enemy.pos.y = new_ky
+			}
+
+			enemy.knockback_vel *= KNOCKBACK_DECAY
+			if linalg.length(enemy.knockback_vel) < KNOCKBACK_MIN {
+				enemy.knockback_vel = {0, 0}
+			}
+		}
+
 		// Chase player
 		nearest_dist: f32 = 999999
 		nearest_dir: raylib.Vector2
@@ -329,11 +366,13 @@ check_enemy_player_collision :: proc(gs: ^Game_State) {
 			spawn_damage_text(gs, gs.player.pos, dmg)
 			play_sfx(gs.audio.hit)
 
-			// Knockback direction: enemy -> player
+			// Knockback direction: enemy -> player (and player -> enemy)
 			diff := gs.player.pos - enemy.pos
 			dist := linalg.length(diff)
 			if dist > 0 {
-				gs.player.knockback_vel = linalg.normalize(diff) * knockback
+				dir := linalg.normalize(diff)
+				gs.player.knockback_vel = dir * knockback
+				enemy.knockback_vel = -dir * ENEMY_HIT_KNOCKBACK
 			}
 			return
 		}
@@ -400,11 +439,11 @@ draw_boss_hp_bar :: proc(gs: ^Game_State) {
 
 	// Draw boss name above bar
 	name_size: f32 = 14
-	name_w := raylib.MeasureTextEx(gs.font, "Donald Monroe", name_size, 1).x
+	name_w := raylib.MeasureTextEx(gs.fonts[.S14], "Donald Monroe", name_size, 1).x
 	name_x := (f32(SCREEN_WIDTH) - name_w) / 2
 	name_y := f32(BAR_Y) - 16
 	raylib.DrawTextEx(
-		gs.font,
+		gs.fonts[.S14],
 		"Donald Monroe",
 		{name_x, name_y},
 		name_size,

@@ -1,0 +1,25 @@
+*This dialogue scene occurs if the player interacts with Bozzo, the NPC in home_base.map*
+[START]
+BOZZO: You're just in time! Donald Monroe and his goons have been terrorizing our little village.
+[PRESS ENTER]
+BOZZO: Our local police have tried to subdue them but to no avail. We need the famous crime fighting duo!
+[PRESS ENTER]
+BOZZO: Erm, aren't their supposed to be two of you?
+[PRESS ENTER]
+BOZZO: Hmm I see, your partner is flanking Monroe from the rear while he awaits you in the Arena. If you even make it there...
+[PRESS ENTER]
+BOZZO: Well, let me offer you some advice. You can move and avoid enemies with [WASD]. 
+[PRESS ENTER]
+BOZZO: Point your reticle in the direction of an enemy and press or hold [LEFT CLICK] to fire!
+[PRESS ENTER]
+BOZZO: In the next room, you'll find a chest which will give you a new weapon if you want it.
+[PRESS ENTER]
+BOZZO: ...Although I don't remember which weapon is in it... Its either the Slinger, the Flamethrower, or the Raygun. All good choices.
+[PRESS ENTER]
+BOZZO: Eventually you will need to reload your weapon, which you can do by pressing [RIGHT CLICK].
+[PRESS ENTER]
+BOZZO: Oh and one more tip. As long as you you are not moving [WASD], you will automatically face the direction you are shooting [LEFT CLICK].
+[PRESS ENTER]
+BOZZO: Now, Good luck!
+[PRESS ENTER]
+[END]

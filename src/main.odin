@@ -17,6 +17,30 @@ MAX_HEALTH_CRATES :: 8
 MAX_NPCS          :: 8
 NPC_ANIM_FRAME_TIME :: 0.2
 HEALTH_CRATE_HEAL :: 15
+
+Font_Size :: enum {
+	S6,
+	S10,
+	S12,
+	S14,
+	S16,
+	S20,
+	S22,
+	S28,
+	S32,
+}
+
+FONT_PIXEL_SIZES :: [Font_Size]i32 {
+	.S6  = 6,
+	.S10 = 10,
+	.S12 = 12,
+	.S14 = 14,
+	.S16 = 16,
+	.S20 = 20,
+	.S22 = 22,
+	.S28 = 28,
+	.S32 = 32,
+}
 DAMAGE_TEXT_SPEED      :: 20.0
 DAMAGE_TEXT_TIME       :: 0.8
 DOOR_ANIM_FRAME_TIME   :: 0.2
@@ -79,7 +103,7 @@ Game_State :: struct {
 	enemies_cleared:     bool,
 	game_over:           bool,
 	game_over_selection: i32,
-	font:                raylib.Font,
+	fonts:               [Font_Size]raylib.Font,
 	spawn_pos:           raylib.Vector2,
 	white_flash_shader:  raylib.Shader,
 	damage_texts:        [MAX_DAMAGE_TEXTS]Damage_Text,
@@ -109,6 +133,11 @@ Game_State :: struct {
 	pause_confirm_selection: i32,
 	pause_audio_selection:  i32,
 	audio:                 Audio_State,
+	dialogue:              Dialogue_State,
+	current_map_name:      string,
+	exit_door_pos:         raylib.Vector2,
+	has_exit_door:         bool,
+	compass_arrow_tex:     raylib.Texture2D,
 	render_target:         raylib.RenderTexture2D,
 	screen_scale:          f32,
 	screen_offset:         raylib.Vector2,
@@ -164,6 +193,8 @@ main :: proc() {
 		return
 	}
 	gs.map_data = map_data
+	gs.current_map_name = "home_base.map"
+	find_exit_door(&gs)
 
 	// Load tile textures
 	gs.tile_textures = make(map[u8][dynamic]raylib.Texture2D)
@@ -220,11 +251,15 @@ main :: proc() {
 	// Load reticle cursor
 	gs.reticle_tex = raylib.LoadTexture("assets/sprites/reticle.png")
 	gs.ammo_tex = raylib.LoadTexture("assets/sprites/ammo.png")
+	gs.compass_arrow_tex = raylib.LoadTexture("assets/sprites/compass_arrow.png")
 	raylib.HideCursor()
 
-	// Load font
-	gs.font = raylib.LoadFontEx("assets/Romulus.ttf", 48, nil, 0)
-	raylib.SetTextureFilter(gs.font.texture, .POINT)
+	// Load fonts — one per distinct draw size for crisp rendering
+	pixel_sizes := FONT_PIXEL_SIZES
+	for size in Font_Size {
+		gs.fonts[size] = raylib.LoadFontEx("assets/Romulus.ttf", pixel_sizes[size], nil, 0)
+		raylib.SetTextureFilter(gs.fonts[size].texture, .POINT)
+	}
 
 	// Load white flash shader (turns all visible pixels white)
 	WHITE_FLASH_FS :: `#version 330
@@ -271,6 +306,12 @@ void main() {
 	init_enemies(&gs)
 	init_npcs(&gs)
 	init_arena(&gs)
+
+	// Load dialogue
+	dialogue, dialogue_ok := parse_dialogue_file("assets/dialogue/player_and_bozzo.dialg")
+	if dialogue_ok {
+		gs.dialogue = dialogue
+	}
 
 	// Init camera centered on spawn
 	gs.camera.zoom = CAMERA_ZOOM
@@ -319,7 +360,21 @@ void main() {
 				} else if action == 2 {
 					break game_loop
 				}
+			} else if gs.dialogue.active {
+				update_dialogue(&gs.dialogue, dt, &gs.audio)
+				update_npcs(&gs, dt)
+				update_animation(&gs.player, dt)
+				update_camera(&gs)
 			} else if !gs.game_over && !gs.boss_victory {
+				// Check interact with NPC
+				nearby_npc := find_nearby_npc(&gs.player, &gs.npcs)
+				if nearby_npc >= 0 && !gs.dialogue.completed {
+					if raylib.IsKeyPressed(.E) ||
+					   (raylib.IsGamepadAvailable(0) && raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_LEFT)) {
+						start_dialogue(&gs.dialogue)
+					}
+				}
+
 				get_player_input(&gs.player, &gs)
 
 				if gs.player.fire_cooldown > 0 {
@@ -448,12 +503,22 @@ void main() {
 			draw_laser_beams(&gs.laser_beams)
 			draw_player(&gs.player, gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex, gs.lasergun_tex)
 			draw_projectiles(&gs.projectiles)
-			draw_damage_texts(&gs.damage_texts, gs.font)
+			draw_damage_texts(&gs.damage_texts, gs.fonts[.S6])
+
+			// Draw [E] interact prompt above nearby NPC (world space)
+			if !gs.dialogue.active && !gs.dialogue.completed && !gs.paused && !gs.game_over && !gs.boss_victory {
+				nearby_npc := find_nearby_npc(&gs.player, &gs.npcs)
+				if nearby_npc >= 0 {
+					draw_interact_prompt(&gs.npcs[nearby_npc])
+				}
+			}
+
 			raylib.EndMode2D()
 
 			draw_hp_bar(&gs.player)
 			draw_ammo_display(&gs.player, gs.ammo_tex)
 			draw_boss_hp_bar(&gs)
+			draw_exit_compass(&gs)
 
 			// Arena objective text with subtle pulse
 			if gs.arena.active && !gs.arena.boss_defeated {
@@ -462,7 +527,7 @@ void main() {
 				text_size := base_size * pulse
 				text_alpha := u8(200 + 55 * math.sin(f32(raylib.GetTime()) * 2.0))
 				raylib.DrawTextEx(
-					gs.font,
+					gs.fonts[.S10],
 					"Survive the enemy waves!",
 					{8, 8},
 					text_size,
@@ -474,11 +539,14 @@ void main() {
 			if gs.door_locked_msg_timer > 0 {
 				msg :: "Find the key to unlock"
 				msg_size: f32 = 14
-				msg_w := raylib.MeasureTextEx(gs.font, msg, msg_size, 1).x
+				msg_w := raylib.MeasureTextEx(gs.fonts[.S14], msg, msg_size, 1).x
 				msg_x := (f32(SCREEN_WIDTH) - msg_w) / 2
 				msg_y: f32 = f32(SCREEN_HEIGHT) - 50
-				raylib.DrawTextEx(gs.font, msg, {msg_x, msg_y}, msg_size, 1, {255, 220, 50, 255})
+				raylib.DrawTextEx(gs.fonts[.S14], msg, {msg_x, msg_y}, msg_size, 1, {255, 220, 50, 255})
 			}
+
+			// Draw dialogue box (screen space)
+			draw_dialogue(&gs.dialogue, &gs.fonts)
 
 			if gs.paused {
 				draw_pause_menu(&gs)
@@ -538,12 +606,15 @@ void main() {
 	raylib.UnloadTexture(gs.npc_bunny_tex)
 	raylib.UnloadTexture(gs.reticle_tex)
 	raylib.UnloadTexture(gs.ammo_tex)
-	raylib.UnloadFont(gs.font)
+	for size in Font_Size {
+		raylib.UnloadFont(gs.fonts[size])
+	}
 	raylib.UnloadShader(gs.white_flash_shader)
 
 	raylib.UnloadTexture(gs.menu_bg_tex)
 	raylib.UnloadTexture(gs.menu_floor_tex)
 
+	destroy_dialogue(&gs.dialogue)
 	dm.destroy_map(&gs.map_data)
 }
 
@@ -602,9 +673,9 @@ init_player :: proc(gs: ^Game_State) {
 draw_character_select :: proc(gs: ^Game_State) {
 	// Title
 	title_size: f32 = 28
-	title_w := raylib.MeasureTextEx(gs.font, "CHOOSE YOUR CHARACTER", title_size, 1).x
+	title_w := raylib.MeasureTextEx(gs.fonts[.S28], "CHOOSE YOUR CHARACTER", title_size, 1).x
 	title_x := (f32(SCREEN_WIDTH) - title_w) / 2
-	raylib.DrawTextEx(gs.font, "CHOOSE YOUR CHARACTER", {title_x, 60}, title_size, 1, {220, 210, 240, 255})
+	raylib.DrawTextEx(gs.fonts[.S28], "CHOOSE YOUR CHARACTER", {title_x, 60}, title_size, 1, {220, 210, 240, 255})
 
 	option_size: f32 = 22
 	PREVIEW_SIZE :: 48
@@ -619,9 +690,9 @@ draw_character_select :: proc(gs: ^Game_State) {
 		raylib.DrawTexturePro(gs.sheryl_idle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
 		name_x := preview_x + PREVIEW_SIZE + 12
 		if gs.menu_selection == 0 {
-			raylib.DrawTextEx(gs.font, ">", {name_x - 18, y}, option_size, 1, color)
+			raylib.DrawTextEx(gs.fonts[.S22], ">", {name_x - 18, y}, option_size, 1, color)
 		}
-		raylib.DrawTextEx(gs.font, "SHERYL", {name_x, y}, option_size, 1, color)
+		raylib.DrawTextEx(gs.fonts[.S22], "SHERYL", {name_x, y}, option_size, 1, color)
 	}
 
 	// Benny
@@ -634,9 +705,9 @@ draw_character_select :: proc(gs: ^Game_State) {
 		raylib.DrawTexturePro(gs.benny_idle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
 		name_x := preview_x + PREVIEW_SIZE + 12
 		if gs.menu_selection == 1 {
-			raylib.DrawTextEx(gs.font, ">", {name_x - 18, y}, option_size, 1, color)
+			raylib.DrawTextEx(gs.fonts[.S22], ">", {name_x - 18, y}, option_size, 1, color)
 		}
-		raylib.DrawTextEx(gs.font, "BENNY", {name_x, y}, option_size, 1, color)
+		raylib.DrawTextEx(gs.fonts[.S22], "BENNY", {name_x, y}, option_size, 1, color)
 	}
 }
 
@@ -683,33 +754,33 @@ draw_game_over :: proc(gs: ^Game_State) {
 
 	// Title
 	title_size: f32 = 32
-	title_w := raylib.MeasureTextEx(gs.font, "GAME OVER", title_size, 1).x
+	title_w := raylib.MeasureTextEx(gs.fonts[.S32], "GAME OVER", title_size, 1).x
 	title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
 	title_y := f32(PANEL_Y) + 15
-	raylib.DrawTextEx(gs.font, "GAME OVER", {title_x, title_y}, title_size, 1, {220, 50, 50, 255})
+	raylib.DrawTextEx(gs.fonts[.S32], "GAME OVER", {title_x, title_y}, title_size, 1, {220, 50, 50, 255})
 
 	// Menu options
 	option_size: f32 = 20
 
 	// Restart
-	restart_w := raylib.MeasureTextEx(gs.font, "RESTART", option_size, 1).x
+	restart_w := raylib.MeasureTextEx(gs.fonts[.S20], "RESTART", option_size, 1).x
 	restart_x := f32(PANEL_X) + (f32(PANEL_W) - restart_w) / 2
 	restart_y := f32(PANEL_Y) + 65
 	restart_color: raylib.Color = gs.game_over_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 	if gs.game_over_selection == 0 {
-		raylib.DrawTextEx(gs.font, ">", {restart_x - 18, restart_y}, option_size, 1, restart_color)
+		raylib.DrawTextEx(gs.fonts[.S20], ">", {restart_x - 18, restart_y}, option_size, 1, restart_color)
 	}
-	raylib.DrawTextEx(gs.font, "RESTART", {restart_x, restart_y}, option_size, 1, restart_color)
+	raylib.DrawTextEx(gs.fonts[.S20], "RESTART", {restart_x, restart_y}, option_size, 1, restart_color)
 
 	// Quit
-	quit_w := raylib.MeasureTextEx(gs.font, "QUIT", option_size, 1).x
+	quit_w := raylib.MeasureTextEx(gs.fonts[.S20], "QUIT", option_size, 1).x
 	quit_x := f32(PANEL_X) + (f32(PANEL_W) - quit_w) / 2
 	quit_y := f32(PANEL_Y) + 95
 	quit_color: raylib.Color = gs.game_over_selection == 0 ? {180, 180, 180, 255} : {255, 220, 50, 255}
 	if gs.game_over_selection == 1 {
-		raylib.DrawTextEx(gs.font, ">", {quit_x - 18, quit_y}, option_size, 1, quit_color)
+		raylib.DrawTextEx(gs.fonts[.S20], ">", {quit_x - 18, quit_y}, option_size, 1, quit_color)
 	}
-	raylib.DrawTextEx(gs.font, "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
+	raylib.DrawTextEx(gs.fonts[.S20], "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
 }
 
 // Returns 0=none, 1=continue(restart), 2=quit
@@ -755,33 +826,33 @@ draw_boss_victory :: proc(gs: ^Game_State) {
 
 	// Title
 	title_size: f32 = 22
-	title_w := raylib.MeasureTextEx(gs.font, "You captured Monroe!", title_size, 1).x
+	title_w := raylib.MeasureTextEx(gs.fonts[.S22], "You captured Monroe!", title_size, 1).x
 	title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
 	title_y := f32(PANEL_Y) + 15
-	raylib.DrawTextEx(gs.font, "You captured Monroe!", {title_x, title_y}, title_size, 1, {255, 220, 50, 255})
+	raylib.DrawTextEx(gs.fonts[.S22], "You captured Monroe!", {title_x, title_y}, title_size, 1, {255, 220, 50, 255})
 
 	// Menu options
 	option_size: f32 = 20
 
 	// Continue
-	continue_w := raylib.MeasureTextEx(gs.font, "CONTINUE", option_size, 1).x
+	continue_w := raylib.MeasureTextEx(gs.fonts[.S20], "CONTINUE", option_size, 1).x
 	continue_x := f32(PANEL_X) + (f32(PANEL_W) - continue_w) / 2
 	continue_y := f32(PANEL_Y) + 65
 	continue_color: raylib.Color = gs.boss_victory_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 	if gs.boss_victory_selection == 0 {
-		raylib.DrawTextEx(gs.font, ">", {continue_x - 18, continue_y}, option_size, 1, continue_color)
+		raylib.DrawTextEx(gs.fonts[.S20], ">", {continue_x - 18, continue_y}, option_size, 1, continue_color)
 	}
-	raylib.DrawTextEx(gs.font, "CONTINUE", {continue_x, continue_y}, option_size, 1, continue_color)
+	raylib.DrawTextEx(gs.fonts[.S20], "CONTINUE", {continue_x, continue_y}, option_size, 1, continue_color)
 
 	// Quit
-	quit_w := raylib.MeasureTextEx(gs.font, "QUIT", option_size, 1).x
+	quit_w := raylib.MeasureTextEx(gs.fonts[.S20], "QUIT", option_size, 1).x
 	quit_x := f32(PANEL_X) + (f32(PANEL_W) - quit_w) / 2
 	quit_y := f32(PANEL_Y) + 95
 	quit_color: raylib.Color = gs.boss_victory_selection == 0 ? {180, 180, 180, 255} : {255, 220, 50, 255}
 	if gs.boss_victory_selection == 1 {
-		raylib.DrawTextEx(gs.font, ">", {quit_x - 18, quit_y}, option_size, 1, quit_color)
+		raylib.DrawTextEx(gs.fonts[.S20], ">", {quit_x - 18, quit_y}, option_size, 1, quit_color)
 	}
-	raylib.DrawTextEx(gs.font, "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
+	raylib.DrawTextEx(gs.fonts[.S20], "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
 }
 
 // Returns 0=none, 1=continue, 2=quit
@@ -951,28 +1022,28 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 
 		// Title
 		title_size: f32 = 28
-		title_w := raylib.MeasureTextEx(gs.font, "PAUSED", title_size, 1).x
+		title_w := raylib.MeasureTextEx(gs.fonts[.S28], "PAUSED", title_size, 1).x
 		title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
 		title_y := f32(PANEL_Y) + 12
-		raylib.DrawTextEx(gs.font, "PAUSED", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
+		raylib.DrawTextEx(gs.fonts[.S28], "PAUSED", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
 
 		option_size: f32 = 20
 		options := [4]cstring{"CONTINUE", "CONTROLS", "AUDIO", "QUIT"}
 
 		for i: i32 = 0; i < 4; i += 1 {
-			opt_w := raylib.MeasureTextEx(gs.font, options[i], option_size, 1).x
+			opt_w := raylib.MeasureTextEx(gs.fonts[.S20], options[i], option_size, 1).x
 			opt_x := f32(PANEL_X) + (f32(PANEL_W) - opt_w) / 2
 			opt_y := f32(PANEL_Y) + 55 + f32(i) * 30
 			color: raylib.Color = gs.pause_selection == i ? {255, 220, 50, 255} : {180, 180, 180, 255}
 			if gs.pause_selection == i {
-				raylib.DrawTextEx(gs.font, ">", {opt_x - 18, opt_y}, option_size, 1, color)
+				raylib.DrawTextEx(gs.fonts[.S20], ">", {opt_x - 18, opt_y}, option_size, 1, color)
 			}
-			raylib.DrawTextEx(gs.font, options[i], {opt_x, opt_y}, option_size, 1, color)
+			raylib.DrawTextEx(gs.fonts[.S20], options[i], {opt_x, opt_y}, option_size, 1, color)
 		}
 
 	case .Controls:
 		PANEL_W :: 280
-		PANEL_H :: 200
+		PANEL_H :: 218
 		PANEL_X :: (SCREEN_WIDTH - PANEL_W) / 2
 		PANEL_Y :: (SCREEN_HEIGHT - PANEL_H) / 2
 
@@ -984,10 +1055,10 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 		)
 
 		title_size: f32 = 22
-		title_w := raylib.MeasureTextEx(gs.font, "CONTROLS", title_size, 1).x
+		title_w := raylib.MeasureTextEx(gs.fonts[.S22], "CONTROLS", title_size, 1).x
 		title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
 		title_y := f32(PANEL_Y) + 10
-		raylib.DrawTextEx(gs.font, "CONTROLS", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
+		raylib.DrawTextEx(gs.fonts[.S22], "CONTROLS", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
 
 		label_size: f32 = 12
 		lx: f32 = f32(PANEL_X) + 20
@@ -996,26 +1067,27 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 		label_color := raylib.Color{180, 180, 180, 255}
 		value_color := raylib.Color{255, 220, 50, 255}
 
-		controls := [5][2]cstring{
+		controls := [6][2]cstring{
 			{"MOVE", "WASD"},
 			{"AIM", "MOUSE"},
 			{"SHOOT", "LEFT CLICK"},
 			{"RELOAD", "RIGHT CLICK"},
+			{"INTERACT", "E"},
 			{"PAUSE", "P"},
 		}
 
-		for i := 0; i < 5; i += 1 {
+		for i := 0; i < 6; i += 1 {
 			y := ly + f32(i) * line_h
-			raylib.DrawTextEx(gs.font, controls[i][0], {lx, y}, label_size, 1, label_color)
-			raylib.DrawTextEx(gs.font, controls[i][1], {lx + 130, y}, label_size, 1, value_color)
+			raylib.DrawTextEx(gs.fonts[.S12], controls[i][0], {lx, y}, label_size, 1, label_color)
+			raylib.DrawTextEx(gs.fonts[.S12], controls[i][1], {lx + 130, y}, label_size, 1, value_color)
 		}
 
 		// Back button
 		back_size: f32 = 16
-		back_w := raylib.MeasureTextEx(gs.font, "BACK", back_size, 1).x
+		back_w := raylib.MeasureTextEx(gs.fonts[.S16], "BACK", back_size, 1).x
 		back_x := f32(PANEL_X) + (f32(PANEL_W) - back_w) / 2
 		back_y := f32(PANEL_Y) + f32(PANEL_H) - 32
-		raylib.DrawTextEx(gs.font, "> BACK", {back_x - 18, back_y}, back_size, 1, {255, 220, 50, 255})
+		raylib.DrawTextEx(gs.fonts[.S16], "> BACK", {back_x - 18, back_y}, back_size, 1, {255, 220, 50, 255})
 
 	case .Audio:
 		PANEL_W :: 260
@@ -1031,10 +1103,10 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 		)
 
 		title_size: f32 = 22
-		title_w := raylib.MeasureTextEx(gs.font, "AUDIO", title_size, 1).x
+		title_w := raylib.MeasureTextEx(gs.fonts[.S22], "AUDIO", title_size, 1).x
 		title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
 		title_y := f32(PANEL_Y) + 10
-		raylib.DrawTextEx(gs.font, "AUDIO", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
+		raylib.DrawTextEx(gs.fonts[.S22], "AUDIO", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
 
 		label_size: f32 = 14
 		lx: f32 = f32(PANEL_X) + 20
@@ -1051,9 +1123,9 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 			y: f32 = f32(PANEL_Y) + 50
 			color: raylib.Color = gs.pause_audio_selection == 0 ? selected_color : label_color
 			if gs.pause_audio_selection == 0 {
-				raylib.DrawTextEx(gs.font, ">", {lx - 14, y - 2}, label_size, 1, color)
+				raylib.DrawTextEx(gs.fonts[.S14], ">", {lx - 14, y - 2}, label_size, 1, color)
 			}
-			raylib.DrawTextEx(gs.font, "MUSIC", {lx, y - 2}, label_size, 1, color)
+			raylib.DrawTextEx(gs.fonts[.S14], "MUSIC", {lx, y - 2}, label_size, 1, color)
 
 			// Slider track
 			track_y := y + 2
@@ -1076,9 +1148,9 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 			y: f32 = f32(PANEL_Y) + 80
 			color: raylib.Color = gs.pause_audio_selection == 1 ? selected_color : label_color
 			if gs.pause_audio_selection == 1 {
-				raylib.DrawTextEx(gs.font, ">", {lx - 14, y - 2}, label_size, 1, color)
+				raylib.DrawTextEx(gs.fonts[.S14], ">", {lx - 14, y - 2}, label_size, 1, color)
 			}
-			raylib.DrawTextEx(gs.font, "SFX", {lx, y - 2}, label_size, 1, color)
+			raylib.DrawTextEx(gs.fonts[.S14], "SFX", {lx, y - 2}, label_size, 1, color)
 
 			// Slider track
 			track_y := y + 2
@@ -1100,13 +1172,13 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 		{
 			back_size: f32 = 16
 			back_color: raylib.Color = gs.pause_audio_selection == 2 ? selected_color : label_color
-			back_w := raylib.MeasureTextEx(gs.font, "BACK", back_size, 1).x
+			back_w := raylib.MeasureTextEx(gs.fonts[.S16], "BACK", back_size, 1).x
 			back_x := f32(PANEL_X) + (f32(PANEL_W) - back_w) / 2
 			back_y := f32(PANEL_Y) + f32(PANEL_H) - 32
 			if gs.pause_audio_selection == 2 {
-				raylib.DrawTextEx(gs.font, ">", {back_x - 18, back_y}, back_size, 1, back_color)
+				raylib.DrawTextEx(gs.fonts[.S16], ">", {back_x - 18, back_y}, back_size, 1, back_color)
 			}
-			raylib.DrawTextEx(gs.font, "BACK", {back_x, back_y}, back_size, 1, back_color)
+			raylib.DrawTextEx(gs.fonts[.S16], "BACK", {back_x, back_y}, back_size, 1, back_color)
 		}
 
 	case .Quit_Confirm:
@@ -1123,32 +1195,32 @@ draw_pause_menu :: proc(gs: ^Game_State) {
 		)
 
 		title_size: f32 = 20
-		title_w := raylib.MeasureTextEx(gs.font, "ARE YOU SURE?", title_size, 1).x
+		title_w := raylib.MeasureTextEx(gs.fonts[.S20], "ARE YOU SURE?", title_size, 1).x
 		title_x := f32(PANEL_X) + (f32(PANEL_W) - title_w) / 2
 		title_y := f32(PANEL_Y) + 15
-		raylib.DrawTextEx(gs.font, "ARE YOU SURE?", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
+		raylib.DrawTextEx(gs.fonts[.S20], "ARE YOU SURE?", {title_x, title_y}, title_size, 1, {220, 210, 240, 255})
 
 		option_size: f32 = 20
 
 		// Yes
-		yes_w := raylib.MeasureTextEx(gs.font, "YES", option_size, 1).x
+		yes_w := raylib.MeasureTextEx(gs.fonts[.S20], "YES", option_size, 1).x
 		yes_x := f32(PANEL_X) + (f32(PANEL_W) - yes_w) / 2
 		yes_y := f32(PANEL_Y) + 60
 		yes_color: raylib.Color = gs.pause_confirm_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 		if gs.pause_confirm_selection == 0 {
-			raylib.DrawTextEx(gs.font, ">", {yes_x - 18, yes_y}, option_size, 1, yes_color)
+			raylib.DrawTextEx(gs.fonts[.S20], ">", {yes_x - 18, yes_y}, option_size, 1, yes_color)
 		}
-		raylib.DrawTextEx(gs.font, "YES", {yes_x, yes_y}, option_size, 1, yes_color)
+		raylib.DrawTextEx(gs.fonts[.S20], "YES", {yes_x, yes_y}, option_size, 1, yes_color)
 
 		// No
-		no_w := raylib.MeasureTextEx(gs.font, "NO", option_size, 1).x
+		no_w := raylib.MeasureTextEx(gs.fonts[.S20], "NO", option_size, 1).x
 		no_x := f32(PANEL_X) + (f32(PANEL_W) - no_w) / 2
 		no_y := f32(PANEL_Y) + 90
 		no_color: raylib.Color = gs.pause_confirm_selection == 1 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 		if gs.pause_confirm_selection == 1 {
-			raylib.DrawTextEx(gs.font, ">", {no_x - 18, no_y}, option_size, 1, no_color)
+			raylib.DrawTextEx(gs.fonts[.S20], ">", {no_x - 18, no_y}, option_size, 1, no_color)
 		}
-		raylib.DrawTextEx(gs.font, "NO", {no_x, no_y}, option_size, 1, no_color)
+		raylib.DrawTextEx(gs.fonts[.S20], "NO", {no_x, no_y}, option_size, 1, no_color)
 	}
 }
 
@@ -1177,6 +1249,13 @@ reset_game :: proc(gs: ^Game_State) {
 	gs.boss_victory_selection = 0
 	gs.paused = false
 	gs.pause_submenu = .None
+
+	// Reset dialogue state for new map
+	gs.dialogue.active = false
+	gs.dialogue.completed = false
+	gs.dialogue.current_line = 0
+	gs.dialogue.words_revealed = 0
+
 	update_camera(gs)
 }
 
@@ -1269,6 +1348,8 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	// Destroy old map
 	dm.destroy_map(&gs.map_data)
 	gs.map_data = new_map
+	gs.current_map_name = map_name
+	find_exit_door(gs)
 
 	// Load new tile textures
 	gs.tile_textures = make(map[u8][dynamic]raylib.Texture2D)
@@ -1366,6 +1447,59 @@ transition_to_map :: proc(gs: ^Game_State, map_name: string) {
 	gs.door_anim_frame = 0
 	gs.player.has_key = false
 	update_camera(gs)
+}
+
+find_exit_door :: proc(gs: ^Game_State) {
+	gs.has_exit_door = false
+	for row, y in gs.map_data.grid {
+		for cell, x in row {
+			if cell.symbol == 'd' {
+				if td, ok := gs.map_data.metadata['d']; ok {
+					if len(td.to_room) > 0 {
+						gs.exit_door_pos = {
+							f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2,
+							f32(y * TILE_SIZE) + f32(TILE_SIZE) / 2,
+						}
+						gs.has_exit_door = true
+						return
+					}
+				}
+			}
+		}
+	}
+}
+
+COMPASS_CX :: 20.0
+COMPASS_CY :: 20.0
+
+draw_exit_compass :: proc(gs: ^Game_State) {
+	if !gs.has_exit_door {
+		return
+	}
+	if gs.current_map_name == "arena.map" {
+		return
+	}
+	if gs.game_over || gs.boss_victory || gs.paused {
+		return
+	}
+
+	// Direction from player to door in world space
+	player_center := raylib.Vector2{gs.player.pos.x, gs.player.pos.y - f32(SPRITE_DST_SIZE) / 2}
+	dir := gs.exit_door_pos - player_center
+	dist := math.sqrt(dir.x * dir.x + dir.y * dir.y)
+	if dist < 1 {
+		return
+	}
+
+	// Angle in degrees — sprite points right (0°), atan2 gives radians from +X axis
+	angle := math.atan2(dir.y, dir.x) * (180.0 / math.PI)
+
+	// Source: full 16x16 sprite. Dest: drawn at SPRITE_DST_SIZE (16x16 at game scale)
+	src := raylib.Rectangle{0, 0, 16, 16}
+	dst := raylib.Rectangle{COMPASS_CX, COMPASS_CY, f32(SPRITE_DST_SIZE), f32(SPRITE_DST_SIZE)}
+	origin := raylib.Vector2{f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
+
+	raylib.DrawTexturePro(gs.compass_arrow_tex, src, dst, origin, f32(angle), raylib.WHITE)
 }
 
 spawn_health_crate :: proc(gs: ^Game_State, pos: raylib.Vector2) {
