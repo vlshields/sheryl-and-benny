@@ -1,0 +1,73 @@
+
+MAP_START
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwppwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwnwwwwwwxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwxxxxxxxxxxxxxxxxxxxxxx
+xxxdDxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+MAP_END
+
+
+metadata {
+
+    x: {
+        tiles: /home/pots/acjam/assets/tiles/tile_0019.png,
+        passable:false,
+        collectable:false,
+        other: nil
+    }
+
+    w: {
+        tiles:[
+
+            /home/pots/acjam/assets/tiles/tile_0065.png,
+            /home/pots/acjam/assets/tiles/tile_0064.png
+        ],
+        passable:true,
+        collectable:false,
+        other: nil
+
+    }
+
+    d: {
+        tiles:/home/pots/acjam/assets/tiles/door_left_side_bottom.png,
+          passable:true,
+        collectable:false,
+        other: to_room=pavilion.map
+
+    }
+
+        D: {
+        tiles:/home/pots/acjam/assets/tiles/door_right_side_bottom.png,
+          passable:true,
+        collectable:false,
+        other: to_room=pavilion.map
+
+    }
+
+
+
+            p: {
+        tiles:nil
+          passable:nil,
+        collectable:nil,
+        other: spawn_point=[player1,player2]
+
+    }
+    n: {
+        tiles:nil
+          passable:nil,
+        collectable:nil,
+        other: spawn_point=npc_bunny, does_move=false
+
+    }
+
+
+}

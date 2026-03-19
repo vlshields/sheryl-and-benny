@@ -16,7 +16,7 @@ MAP_END
 metadata {
 
     x: {
-        tiles: /home/pots/acjam/assets/tiles/tile_0019.png,
+        tiles: assets/tiles/tile_0019.png,
         passable:false,
         collectable:false,
         other: nil
@@ -25,8 +25,8 @@ metadata {
     w: {
         tiles:[
 
-            /home/pots/acjam/assets/tiles/tile_0065.png,
-            /home/pots/acjam/assets/tiles/tile_0064.png
+            assets/tiles/tile_0065.png,
+            assets/tiles/tile_0064.png
         ],
         passable:true,
         collectable:false,
@@ -35,7 +35,7 @@ metadata {
     }
 
     d: {
-        tiles:/home/pots/acjam/assets/sprites/door_unlocked_opens_3x16x16.png,
+        tiles:assets/sprites/door_unlocked_opens_3x16x16.png,
           passable:true,
         collectable:false,
         other: to_room=arena.map,animation=true, condition=enemies_cleared && has_key
@@ -60,7 +60,7 @@ metadata {
     }
 
         g: {
-        tiles:/home/pots/acjam/assets/tiles/decorative_rock.png
+        tiles:assets/tiles/decorative_rock.png
           passable:true,
         collectable:nil,
         other: nil

@@ -14,7 +14,7 @@ MAP_END
 metadata {
 
     x: {
-        tiles: /home/pots/acjam/assets/tiles/arena_wall.png,
+        tiles: assets/tiles/arena_wall.png,
         passable:false,
         collectable:false,
         other: nil
@@ -23,8 +23,8 @@ metadata {
     w: {
         tiles:[
 
-            /home/pots/acjam/assets/tiles/arena_floor.png,
-            /home/pots/acjam/assets/tiles/arena_floor2.png
+            assets/tiles/arena_floor.png,
+            assets/tiles/arena_floor2.png
         ],
         passable:true,
         collectable:false,
@@ -33,7 +33,7 @@ metadata {
     }
 
     d: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0140.png,
+        tiles:assets/tiles/tile_0140.png,
           passable:true,
         collectable:false,
         other: to_room=pavilion.map, condition=enemies_cleared
@@ -41,7 +41,7 @@ metadata {
     }
 
         t: {
-        tiles:/home/pots/acjam/assets/tiles/tile_0216.png
+        tiles:assets/tiles/tile_0216.png
           passable:true,
         collectable:true,
         other: contains_item=blaster

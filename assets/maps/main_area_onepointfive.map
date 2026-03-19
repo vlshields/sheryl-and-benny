@@ -17,14 +17,14 @@ MAP_END
 metadata {
 
     x: {
-        tiles: [/home/pots/acjam/assets/tiles/grass_wall_green2.png,
-        /home/pots/acjam/assets/tiles/wall_floor1.png]
+        tiles: [assets/tiles/grass_wall_green2.png,
+        assets/tiles/wall_floor1.png]
         passable:false,
         collectable:false,
         other: nil
     }
     X: {
-    tiles: /home/pots/acjam/assets/tiles/grass_wall_green.png,
+    tiles: assets/tiles/grass_wall_green.png,
     passable:false,
     collectable:false,
     other: nil
@@ -33,8 +33,8 @@ metadata {
     w: {
         tiles:[
 
-            /home/pots/acjam/assets/tiles/tile_0065.png,
-            /home/pots/acjam/assets/tiles/tile_0064.png
+            assets/tiles/tile_0065.png,
+            assets/tiles/tile_0064.png
         ],
         passable:true,
         collectable:false,
@@ -43,7 +43,7 @@ metadata {
     }
 
     d: {
-        tiles:/home/pots/acjam/assets/tiles/door_left_side.png
+        tiles:assets/tiles/door_left_side.png
           passable:true,
         collectable:false,
         other: to_room=main_area_two.map, condition=enemies_cleared
@@ -51,7 +51,7 @@ metadata {
     }
 
         D: {
-        tiles:/home/pots/acjam/assets/tiles/door_right_side.png,
+        tiles:assets/tiles/door_right_side.png,
           passable:true,
         collectable:false,
         other: to_room=main_area_two.map, condition=enemies_cleared
@@ -59,7 +59,7 @@ metadata {
     }
 
         O: {
-        tiles: /home/pots/acjam/assets/tiles/grass_wall_green_bottom.png,
+        tiles: assets/tiles/grass_wall_green_bottom.png,
           passable:false,
         collectable:nil,
         other: nil
@@ -89,7 +89,7 @@ metadata {
     }
 
         g: {
-        tiles:/home/pots/acjam/assets/tiles/decorative_rock.png
+        tiles:assets/tiles/decorative_rock.png
           passable:true,
         collectable:nil,
         other: nil

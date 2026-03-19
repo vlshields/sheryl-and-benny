@@ -6,24 +6,7 @@ import "core:strconv"
 import "core:strings"
 import "vendor:raylib"
 
-MAX_ENEMIES :: 24
-ENEMY_SPEED :: 40.0
-ENEMY_DAMAGE :: 7
-ENEMY_HP :: 14
-ENEMY_KNOCKBACK :: 150.0
-ENEMY_FLASH_TIME :: 0.12
-ENEMY_HIT_KNOCKBACK :: 120.0
 
-FLY_HP :: 24
-FLY_SPEED :: 30.0
-FLY_HOVER_DIST :: 48.0
-FLY_FIRE_COOLDOWN :: 2.0
-FLY_PROJECTILE_DAMAGE :: 6
-FLY_PROJECTILE_SPEED :: 70.0
-FLY_KNOCKBACK :: 100.0
-
-CRAZY_BUNNY_HP :: ENEMY_HP
-CRAZY_BUNNY_SPEED :: 55.0
 
 Enemy_Kind :: enum {
 	Slug,
@@ -32,9 +15,7 @@ Enemy_Kind :: enum {
 	Boss,
 }
 
-ENEMY_HP_BAR_W :: 12
-ENEMY_HP_BAR_H :: 2
-ENEMY_HP_BAR_Y_OFFSET :: 2
+
 
 Enemy :: struct {
 	pos:                raylib.Vector2,

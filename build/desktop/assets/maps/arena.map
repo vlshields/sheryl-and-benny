@@ -1,0 +1,74 @@
+
+MAP_START
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwpwwwwwwwwwwwwwwwwwwwwBwwwwwwwwwwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+MAP_END
+
+
+metadata {
+
+    x: {
+        tiles: /home/pots/acjam/assets/tiles/arena_wall.png,
+        passable:false,
+        collectable:false,
+        other: nil
+    }
+
+    w: {
+        tiles:[
+
+            /home/pots/acjam/assets/tiles/arena_floor.png,
+            /home/pots/acjam/assets/tiles/arena_floor2.png
+        ],
+        passable:true,
+        collectable:false,
+        other: nil
+
+    }
+
+    d: {
+        tiles:/home/pots/acjam/assets/tiles/tile_0140.png,
+          passable:true,
+        collectable:false,
+        other: to_room=pavilion.map, condition=enemies_cleared
+
+    }
+
+        t: {
+        tiles:/home/pots/acjam/assets/tiles/tile_0216.png
+          passable:true,
+        collectable:true,
+        other: contains_item=blaster
+
+    }
+
+            p: {
+        tiles:nil
+          passable:nil,
+        collectable:nil,
+        other: spawn_point=[player1,player2]
+
+    }
+    e: {
+        tiles:nil
+          passable:true,
+        collectable:nil,
+        other: spawn_point=enemy_slug,spawn_time_offset=1300
+
+    }
+    B: {
+    tiles:assets/sprites/enemy_boss.png
+        passable:true,
+    collectable:nil,
+    other: spawn_condition=three_enemy_waves_cleared
+
+}
+
+
+}
