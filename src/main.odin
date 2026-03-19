@@ -1344,7 +1344,7 @@ check_door_transition :: proc(state: ^Game_State) -> string {
 				return ""
 			}
 			// If door dialogue needs to be shown, start it instead of transitioning
-			if state.door_dialogue.loaded && !state.door_dialogue.completed {
+			if state.door_dialogue.loaded && !state.door_dialogue.completed && !state.dialogue.completed {
 				if !state.door_dialogue.active {
 					start_dialogue(&state.door_dialogue)
 				}
