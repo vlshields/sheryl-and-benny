@@ -67,8 +67,8 @@ draw_map :: proc(gs: ^Game_State) {
 				continue
 			}
 
-			// Key and door tiles: draw floor underneath first
-			if sym == 'k' || sym == 'd' {
+			// Key, door, and sign tiles: draw floor underneath first
+			if sym == 'k' || sym == 'd' || sym == 's' {
 				if floor_textures != nil && len(floor_textures) > 0 {
 					raylib.DrawTexture(
 						floor_textures[0],
@@ -874,12 +874,27 @@ find_nearby_npc :: proc(player: ^Player, npcs: ^[MAX_NPCS]NPC) -> int {
 	return -1
 }
 
-draw_interact_prompt :: proc(npc: ^NPC) {
-	// Hovering gold arrow above NPC
+find_nearby_sign :: proc(player: ^Player, signs: ^[MAX_SIGNS]Sign) -> int {
+	for &sign, i in signs {
+		if !sign.active {
+			continue
+		}
+		dx := player.pos.x - sign.pos.x
+		dy := (player.pos.y - f32(SPRITE_DST_SIZE) / 2) - (sign.pos.y - f32(SPRITE_DST_SIZE) / 2)
+		dist := dx * dx + dy * dy
+		if dist < NPC_INTERACT_DIST * NPC_INTERACT_DIST {
+			return i
+		}
+	}
+	return -1
+}
+
+draw_interact_prompt :: proc(pos: raylib.Vector2) {
+	// Hovering gold arrow above entity
 	hover_offset := math.sin(f32(raylib.GetTime()) * 3.0) * 2.0
 	color := raylib.Color{255, 220, 50, 230}
-	cx := npc.pos.x
-	tip_y := npc.pos.y - f32(SPRITE_DST_SIZE) - 10 + hover_offset
+	cx := pos.x
+	tip_y := pos.y - f32(SPRITE_DST_SIZE) - 10 + hover_offset
 	half_w: f32 = 4
 	height: f32 = 6
 	raylib.DrawTriangle(
@@ -1038,7 +1053,7 @@ update_main_menu :: proc(gs: ^Game_State) -> i32 {
 	if gs.menu_sprite_timer >= ANIM_FRAME_TIME {
 		gs.menu_sprite_timer -= ANIM_FRAME_TIME
 		gs.menu_sheryl_frame = (gs.menu_sheryl_frame + 1) % 3
-		gs.menu_benny_frame = (gs.menu_benny_frame + 1) % 4
+		gs.menu_benny_frame = (gs.menu_benny_frame + 1) % 3
 	}
 
 	// Slide title down from top

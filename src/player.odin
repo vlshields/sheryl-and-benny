@@ -73,6 +73,7 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 				player.ammo -= 1
+				if player.ammo == 0 { play_sfx(audio.out_of_ammo) }
 				play_sfx_loop(audio.flamethrower_loop)
 				firing_loop = true
 			} else if player.weapon == .Laser_Gun {
@@ -80,6 +81,7 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 				if player.fire_cooldown <= 0 {
 					player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 					player.ammo -= 1
+					if player.ammo == 0 { play_sfx(audio.out_of_ammo) }
 				}
 				play_sfx_loop(audio.lasergun_loop)
 				firing_loop = true
@@ -88,6 +90,7 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 				player.ammo -= 1
+				if player.ammo == 0 { play_sfx(audio.out_of_ammo) }
 				if player.weapon == .Blaster {
 					play_sfx(audio.blaster_shot)
 				} else if player.weapon == .Slinger {
@@ -150,6 +153,7 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 			if player.weapon == .Flamethrower {
 				spawn_flame_particles(player, &gs.flame_particles)
 				player.ammo -= 1
+				if player.ammo == 0 { play_sfx(audio.out_of_ammo) }
 				play_sfx_loop(audio.flamethrower_loop)
 				firing_loop = true
 			} else if player.weapon == .Laser_Gun {
@@ -157,6 +161,7 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 				if player.fire_cooldown <= 0 {
 					player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 					player.ammo -= 1
+					if player.ammo == 0 { play_sfx(audio.out_of_ammo) }
 				}
 				play_sfx_loop(audio.lasergun_loop)
 				firing_loop = true
@@ -165,6 +170,7 @@ get_player_input :: proc(player: ^Player, gs: ^Game_State) {
 				spawn_muzzle_flash(player, &gs.particles)
 				player.fire_cooldown = weapon_fire_cooldown(player.weapon)
 				player.ammo -= 1
+				if player.ammo == 0 { play_sfx(audio.out_of_ammo) }
 				if player.weapon == .Blaster {
 					play_sfx(audio.blaster_shot)
 				} else if player.weapon == .Slinger {

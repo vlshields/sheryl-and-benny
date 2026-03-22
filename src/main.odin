@@ -36,6 +36,11 @@ NPC :: struct {
 	facing_left:   bool,
 }
 
+Sign :: struct {
+	pos:    raylib.Vector2,
+	active: bool,
+}
+
 Game_State :: struct {
 	map_data:               dm.Dot_Map,
 	tile_textures:          map[u8][dynamic]raylib.Texture2D,
@@ -90,6 +95,8 @@ Game_State :: struct {
 	audio:                  Audio_State,
 	dialogue:               Dialogue_State,
 	door_dialogue:          Dialogue_State,
+	sign_dialogue:          Dialogue_State,
+	signs:                  [MAX_SIGNS]Sign,
 	current_map_name:       string,
 	exit_door_pos:          raylib.Vector2,
 	has_exit_door:          bool,
@@ -314,9 +321,10 @@ init :: proc() {
 
 	gs.spawn_pos = {spawn_x, spawn_y}
 
-	// Init enemies and NPCs
+	// Init enemies, NPCs, and signs
 	init_enemies(&gs)
 	init_npcs(&gs)
+	init_signs(&gs)
 	init_arena(&gs)
 
 	// Load dialogues
@@ -327,6 +335,10 @@ init :: proc() {
 	door_dlg, door_dlg_ok := parse_dialogue_file("assets/dialogue/player_and_homebase_door.dialg")
 	if door_dlg_ok {
 		gs.door_dialogue = door_dlg
+	}
+	sign_dlg, sign_dlg_ok := parse_dialogue_file("assets/dialogue/sign_find_the_key.dialg")
+	if sign_dlg_ok {
+		gs.sign_dialogue = sign_dlg
 	}
 
 	// Init camera centered on spawn
@@ -399,6 +411,16 @@ update :: proc() {
 					gs.player.pos.y -= f32(TILE_SIZE)
 				}
 			}
+		} else if gs.sign_dialogue.active {
+			update_dialogue(&gs.sign_dialogue, dt, &gs.audio)
+			update_animation(&gs.player, dt)
+			update_camera(&gs)
+			if gs.sign_dialogue.completed {
+				gs.sign_dialogue.active = false
+				gs.sign_dialogue.completed = false
+				gs.sign_dialogue.current_line = 0
+				gs.sign_dialogue.words_revealed = 0
+			}
 		} else if gs.dialogue.active {
 			update_dialogue(&gs.dialogue, dt, &gs.audio)
 			update_npcs(&gs, dt)
@@ -411,6 +433,17 @@ update :: proc() {
 				if raylib.IsKeyPressed(.E) ||
 				   (raylib.IsGamepadAvailable(0) && raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_LEFT)) {
 					start_dialogue(&gs.dialogue)
+					play_sfx(gs.audio.ui_confirm)
+				}
+			}
+
+			// Check interact with sign
+			nearby_sign := find_nearby_sign(&gs.player, &gs.signs)
+			if nearby_sign >= 0 && !gs.sign_dialogue.active {
+				if raylib.IsKeyPressed(.E) ||
+				   (raylib.IsGamepadAvailable(0) && raylib.IsGamepadButtonPressed(0, .RIGHT_FACE_LEFT)) {
+					start_dialogue(&gs.sign_dialogue)
+					play_sfx(gs.audio.ui_confirm)
 				}
 			}
 
@@ -548,11 +581,19 @@ update :: proc() {
 		draw_player(&gs.player, gs.blaster_tex, gs.slinger_tex, gs.flamethrower_tex, gs.lasergun_tex)
 		draw_projectiles(&gs.projectiles)
 
-		// Draw [E] interact prompt above nearby NPC (world space)
-		if !gs.dialogue.active && !gs.dialogue.completed && !gs.paused && !gs.game_over && !gs.boss_victory {
-			nearby_npc := find_nearby_npc(&gs.player, &gs.npcs)
-			if nearby_npc >= 0 {
-				draw_interact_prompt(&gs.npcs[nearby_npc])
+		// Draw [E] interact prompt above nearby NPC or sign (world space)
+		if !gs.paused && !gs.game_over && !gs.boss_victory {
+			if !gs.dialogue.active && !gs.dialogue.completed {
+				nearby_npc := find_nearby_npc(&gs.player, &gs.npcs)
+				if nearby_npc >= 0 {
+					draw_interact_prompt(gs.npcs[nearby_npc].pos)
+				}
+			}
+			if !gs.sign_dialogue.active {
+				nearby_sign := find_nearby_sign(&gs.player, &gs.signs)
+				if nearby_sign >= 0 {
+					draw_interact_prompt(gs.signs[nearby_sign].pos)
+				}
 			}
 		}
 
@@ -591,6 +632,7 @@ update :: proc() {
 		// Draw dialogue box (screen space)
 		draw_dialogue(&gs.dialogue, gs.font)
 		draw_dialogue(&gs.door_dialogue, gs.font)
+		draw_dialogue(&gs.sign_dialogue, gs.font)
 
 		if gs.paused {
 			draw_pause_menu(&gs)
@@ -664,6 +706,7 @@ shutdown :: proc() {
 
 	destroy_dialogue(&gs.dialogue)
 	destroy_dialogue(&gs.door_dialogue)
+	destroy_dialogue(&gs.sign_dialogue)
 	dm.destroy_map(&gs.map_data)
 
 	raylib.CloseWindow()
@@ -719,7 +762,7 @@ init_player :: proc(state: ^Game_State) {
 			pos              = state.spawn_pos,
 			sprite_sheet     = state.benny_move_tex,
 			idle_sheet       = state.benny_idle_tex,
-			frame_count      = 4,
+			frame_count      = 3,
 			idle_frame_count = 5,
 			hp               = PLAYER_HP,
 			weapon           = .Blaster,
@@ -1474,16 +1517,22 @@ transition_to_map :: proc(state: ^Game_State, map_name: string) {
 		crate.active = false
 	}
 
-	// Re-init enemies and NPCs
+	// Re-init enemies, NPCs, and signs
 	for &enemy in state.enemies {
 		enemy = {}
 	}
 	for &npc in state.npcs {
 		npc = {}
 	}
+	for &sign in state.signs {
+		sign = {}
+	}
 	init_enemies(state)
 	init_npcs(state)
+	init_signs(state)
 	init_arena(state)
+	state.sign_dialogue.active = false
+	state.sign_dialogue.completed = false
 
 	state.enemies_cleared = false
 	state.door_locked_msg_timer = 0
@@ -1612,6 +1661,21 @@ init_npcs :: proc(state: ^Game_State) {
 					frame_count  = 3,
 				}
 				npc_idx += 1
+			}
+		}
+	}
+}
+
+init_signs :: proc(state: ^Game_State) {
+	sign_idx := 0
+	for row, y in state.map_data.grid {
+		for cell, x in row {
+			if cell.symbol == 's' && sign_idx < MAX_SIGNS {
+				state.signs[sign_idx] = Sign {
+					pos    = {f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2, f32(y * TILE_SIZE) + f32(TILE_SIZE)},
+					active = true,
+				}
+				sign_idx += 1
 			}
 		}
 	}

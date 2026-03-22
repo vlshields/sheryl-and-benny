@@ -26,6 +26,29 @@
 </head>
 <body>
 	<canvas class="game_canvas" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" onmousedown="event.target.focus()"></canvas>
+	<script>
+		// Browser autoplay policy keeps the AudioContext suspended until a user
+		// gesture.  Miniaudio only listens for 'touchend'/'click', but the game
+		// menu is keyboard-driven.  Directly resume every AudioContext on the
+		// first user interaction of any kind.
+		(function() {
+			var events = ['keydown', 'mousedown', 'touchstart', 'click'];
+			function resumeAudio() {
+				if (typeof window.miniaudio !== 'undefined' && window.miniaudio.devices) {
+					for (var i = 0; i < window.miniaudio.devices.length; i++) {
+						var d = window.miniaudio.devices[i];
+						if (d && d.webaudio && d.webaudio.state === 'suspended') {
+							console.log('[audio] resuming AudioContext on user gesture');
+							d.webaudio.resume();
+						}
+					}
+				}
+			}
+			events.forEach(function(evt) {
+				document.addEventListener(evt, resumeAudio, true);
+			});
+		})();
+	</script>
 	<script type="text/javascript" src="odin.js"></script>
 	<script>
 		var odinMemoryInterface = new odin.WasmMemoryInterface();
@@ -56,6 +79,20 @@
 					console.log("[game] calling main_start...");
 					e.main_start();
 					console.log("[game] init complete");
+
+					// Audio diagnostics
+					if (typeof window.miniaudio !== 'undefined') {
+						console.log("[audio] miniaudio initialized, devices:", window.miniaudio.devices ? window.miniaudio.devices.length : 0);
+						for (var i = 0; i < (window.miniaudio.devices || []).length; i++) {
+							var d = window.miniaudio.devices[i];
+							if (d && d.webaudio) {
+								console.log("[audio] device", i, "- AudioContext state:", d.webaudio.state, "device state:", d.state, "started=", window.miniaudio.device_state.started);
+							}
+						}
+					} else {
+						console.warn("[audio] miniaudio NOT initialized after game init!");
+					}
+
 				} catch (err) {
 					console.error("[game] init error:", err);
 					return;
