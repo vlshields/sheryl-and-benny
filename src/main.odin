@@ -387,8 +387,9 @@ update :: proc() {
 				gs.paused = false
 				gs.pause_submenu = .None
 			} else if action == 2 {
-				gs.should_quit = true
-				return
+				reset_game(&gs)
+				gs.phase = .Main_Menu
+				gs.menu_selection = 0
 			}
 		} else if gs.door_dialogue.active {
 			update_dialogue(&gs.door_dialogue, dt, &gs.audio)
@@ -544,16 +545,18 @@ update :: proc() {
 			if action == 1 {
 				reset_game(&gs)
 			} else if action == 2 {
-				gs.should_quit = true
-				return
+				reset_game(&gs)
+				gs.phase = .Main_Menu
+				gs.menu_selection = 0
 			}
 		} else {
 			action := handle_game_over_input(&gs)
 			if action == 1 {
 				reset_game(&gs)
 			} else if action == 2 {
-				gs.should_quit = true
-				return
+				reset_game(&gs)
+				gs.phase = .Main_Menu
+				gs.menu_selection = 0
 			}
 		}
 	}

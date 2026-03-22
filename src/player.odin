@@ -914,7 +914,8 @@ draw_projectiles :: proc(projectiles: ^[MAX_PROJECTILES]Projectile) {
 	for &proj in projectiles {
 		if proj.active {
 			color: raylib.Color = proj.is_enemy ? {255, 80, 80, 255} : {255, 220, 50, 255}
-			raylib.DrawCircleV(proj.pos, PROJECTILE_RADIUS, color)
+			radius: f32 = proj.is_enemy ? ENEMY_PROJECTILE_RADIUS : PROJECTILE_RADIUS
+			raylib.DrawCircleV(proj.pos, radius, color)
 		}
 	}
 }
