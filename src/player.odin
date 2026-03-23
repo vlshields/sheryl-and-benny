@@ -681,9 +681,15 @@ weapon_max_ammo :: proc(kind: Weapon_Kind) -> i32 {
 	return 0
 }
 
-check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map, dialogue_done: bool = false) -> bool {
+Door_Block_Reason :: enum {
+	Not_Blocked,
+	Needs_Key,
+	Needs_Dialogue,
+}
+
+check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map, dialogue_done: bool = false) -> Door_Block_Reason {
 	if player.move_dir.x == 0 && player.move_dir.y == 0 {
-		return false
+		return .Not_Blocked
 	}
 
 	// Check the tile the player is trying to move into
@@ -694,19 +700,19 @@ check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map, dialogue_done
 	ty := int(center_y) / TILE_SIZE
 
 	if ty < 0 || ty >= map_data.height || tx < 0 || tx >= len(map_data.grid[ty]) {
-		return false
+		return .Not_Blocked
 	}
 
 	cell := map_data.grid[ty][tx]
 	if td, ok := map_data.metadata[cell.symbol]; ok {
 		if strings.contains(td.condition, "has_key") && !player.has_key {
-			return true
+			return .Needs_Key
 		}
 		if strings.contains(td.condition, ".dialg") && !dialogue_done {
-			return true
+			return .Needs_Dialogue
 		}
 	}
-	return false
+	return .Not_Blocked
 }
 
 player_near_door :: proc(player: ^Player, map_data: ^dm.Dot_Map) -> bool {

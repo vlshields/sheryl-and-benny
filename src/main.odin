@@ -98,6 +98,8 @@ Game_State :: struct {
 	sign_dialogue:          Dialogue_State,
 	signs:                  [MAX_SIGNS]Sign,
 	current_map_name:       string,
+	speedrun_timer:         f32,
+	speedrun_timer_active:  bool,
 	exit_door_pos:          raylib.Vector2,
 	has_exit_door:          bool,
 	compass_arrow_tex:      raylib.Texture2D,
@@ -450,6 +452,10 @@ update :: proc() {
 
 			get_player_input(&gs.player, &gs)
 
+			if gs.speedrun_timer_active {
+				gs.speedrun_timer += dt
+			}
+
 			if gs.player.fire_cooldown > 0 {
 				gs.player.fire_cooldown -= dt
 			}
@@ -486,8 +492,9 @@ update :: proc() {
 			update_npcs(&gs, dt)
 
 			// Check if player is bumping into a locked door
-			if check_door_blocked(&gs.player, &gs.map_data, gs.dialogue.completed) {
-				if gs.door_dialogue.loaded && !gs.door_dialogue.active && !gs.dialogue.completed {
+			door_block := check_door_blocked(&gs.player, &gs.map_data, gs.dialogue.completed)
+			if door_block != .Not_Blocked {
+				if door_block == .Needs_Dialogue && gs.door_dialogue.loaded && !gs.door_dialogue.active {
 					start_dialogue(&gs.door_dialogue)
 				} else {
 					if gs.door_locked_msg_timer <= 0 {
@@ -526,6 +533,7 @@ update :: proc() {
 
 			if gs.player.hp <= 0 {
 				gs.game_over = true
+				gs.speedrun_timer_active = false
 				stop_weapon_loops(&gs.audio)
 				stop_sfx(gs.audio.footsteps)
 				stop_sfx(gs.audio.boss_warcry)
@@ -534,6 +542,7 @@ update :: proc() {
 			if gs.arena.boss_defeated && !gs.boss_victory {
 				gs.boss_victory = true
 				gs.boss_victory_selection = 0
+				gs.speedrun_timer_active = false
 				stop_weapon_loops(&gs.audio)
 				stop_sfx(gs.audio.footsteps)
 				stop_sfx(gs.audio.boss_warcry)
@@ -606,6 +615,7 @@ update :: proc() {
 		draw_ammo_display(&gs.player, gs.ammo_tex)
 		draw_boss_hp_bar(&gs)
 		draw_exit_compass(&gs)
+		draw_speedrun_timer(&gs)
 
 		// Arena objective text with subtle pulse
 		if gs.arena.active && !gs.arena.boss_defeated {
@@ -917,7 +927,7 @@ draw_boss_victory :: proc(state: ^Game_State) {
 
 	// Panel
 	PANEL_W :: 260
-	PANEL_H :: 130
+	PANEL_H :: 195
 	PANEL_X :: (SCREEN_WIDTH - PANEL_W) / 2
 	PANEL_Y :: (SCREEN_HEIGHT - PANEL_H) / 2
 
@@ -935,13 +945,46 @@ draw_boss_victory :: proc(state: ^Game_State) {
 	title_y := f32(PANEL_Y) + 15
 	raylib.DrawTextEx(state.font, "You captured Monroe!", {title_x, title_y}, title_size, 1, {255, 220, 50, 255})
 
+	// Timer
+	if state.speedrun_timer > 0 {
+		total_secs := int(state.speedrun_timer)
+		mins := total_secs / 60
+		secs := total_secs % 60
+		time_text := fmt.ctprintf("Time: %d:%02d", mins, secs)
+		time_size: f32 = 14
+		time_w := raylib.MeasureTextEx(state.font, time_text, time_size, 1).x
+		time_x := f32(PANEL_X) + (f32(PANEL_W) - time_w) / 2
+		time_y := f32(PANEL_Y) + 42
+		raylib.DrawTextEx(state.font, time_text, {time_x, time_y}, time_size, 1, {200, 200, 220, 255})
+	}
+
+	// Score
+	minutes_elapsed := int(state.speedrun_timer) / 60
+	hp_lost := int(PLAYER_HP - state.player.hp)
+	score := max(0, SCORE_BASE - (minutes_elapsed * SCORE_TIME_PENALTY) - ((hp_lost / 10) * SCORE_HP_PENALTY))
+	score_text := fmt.ctprintf("Score: %d", score)
+	score_size: f32 = 14
+	score_w := raylib.MeasureTextEx(state.font, score_text, score_size, 1).x
+	score_x := f32(PANEL_X) + (f32(PANEL_W) - score_w) / 2
+	score_y := f32(PANEL_Y) + 62
+	raylib.DrawTextEx(state.font, score_text, {score_x, score_y}, score_size, 1, {200, 200, 220, 255})
+
+	// Stars
+	stars: int = score >= 140 ? 3 : (score >= 60 ? 2 : 1)
+	star_text: cstring = stars == 3 ? "* * *" : (stars == 2 ? "* *" : "*")
+	star_size: f32 = 18
+	star_w := raylib.MeasureTextEx(state.font, star_text, star_size, 1).x
+	star_x := f32(PANEL_X) + (f32(PANEL_W) - star_w) / 2
+	star_y := f32(PANEL_Y) + 80
+	raylib.DrawTextEx(state.font, star_text, {star_x, star_y}, star_size, 1, {255, 220, 50, 255})
+
 	// Menu options
 	option_size: f32 = 20
 
 	// Continue
 	continue_w := raylib.MeasureTextEx(state.font, "CONTINUE", option_size, 1).x
 	continue_x := f32(PANEL_X) + (f32(PANEL_W) - continue_w) / 2
-	continue_y := f32(PANEL_Y) + 65
+	continue_y := f32(PANEL_Y) + 115
 	continue_color: raylib.Color = state.boss_victory_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 	if state.boss_victory_selection == 0 {
 		raylib.DrawTextEx(state.font, ">", {continue_x - 18, continue_y}, option_size, 1, continue_color)
@@ -951,7 +994,7 @@ draw_boss_victory :: proc(state: ^Game_State) {
 	// Quit
 	quit_w := raylib.MeasureTextEx(state.font, "QUIT", option_size, 1).x
 	quit_x := f32(PANEL_X) + (f32(PANEL_W) - quit_w) / 2
-	quit_y := f32(PANEL_Y) + 95
+	quit_y := f32(PANEL_Y) + 145
 	quit_color: raylib.Color = state.boss_victory_selection == 0 ? {180, 180, 180, 255} : {255, 220, 50, 255}
 	if state.boss_victory_selection == 1 {
 		raylib.DrawTextEx(state.font, ">", {quit_x - 18, quit_y}, option_size, 1, quit_color)
@@ -1348,17 +1391,25 @@ reset_game :: proc(state: ^Game_State) {
 
 	state.enemies_cleared = false
 	state.game_over = false
+	state.speedrun_timer = 0
+	state.speedrun_timer_active = false
 	state.game_over_selection = 0
 	state.boss_victory = false
 	state.boss_victory_selection = 0
 	state.paused = false
 	state.pause_submenu = .None
 
-	// Reset dialogue state for new map
+	// Reset dialogue state for new game
 	state.dialogue.active = false
 	state.dialogue.completed = false
 	state.dialogue.current_line = 0
 	state.dialogue.words_revealed = 0
+
+	state.door_dialogue.active = false
+	state.door_dialogue.completed = false
+	state.door_dialogue.current_line = 0
+	state.door_dialogue.words_revealed = 0
+	state.door_dialogue.chosen = -1
 
 	update_camera(state)
 }
@@ -1444,6 +1495,12 @@ transition_to_map :: proc(state: ^Game_State, map_name: string) {
 	state.map_data = new_map
 	state.current_map_name = map_name
 	find_exit_door(state)
+
+	// Start speedrun timer when entering pavilion
+	if map_name == "pavilion.map" {
+		state.speedrun_timer = 0
+		state.speedrun_timer_active = true
+	}
 
 	// Load new tile textures
 	state.tile_textures = make(map[u8][dynamic]raylib.Texture2D)
@@ -1596,6 +1653,33 @@ draw_exit_compass :: proc(state: ^Game_State) {
 	origin := raylib.Vector2{f32(SPRITE_DST_SIZE) / 2, f32(SPRITE_DST_SIZE) / 2}
 
 	raylib.DrawTexturePro(state.compass_arrow_tex, src, dst, origin, f32(angle), raylib.WHITE)
+}
+
+draw_speedrun_timer :: proc(state: ^Game_State) {
+	if state.speedrun_timer == 0 && !state.speedrun_timer_active {
+		return
+	}
+
+	total_secs := int(state.speedrun_timer)
+	mins := total_secs / 60
+	secs := total_secs % 60
+
+	timer_text := fmt.ctprintf("%d:%02d", mins, secs)
+	text_size: f32 = 12
+	text_w := raylib.MeasureTextEx(state.font, timer_text, text_size, 1).x
+	PAD :: 6
+	box_w := i32(text_w) + PAD * 2
+	box_h := i32(text_size) + PAD * 2
+	box_x := SCREEN_WIDTH - box_w - 8
+	box_y: i32 = 8
+
+	raylib.DrawRectangle(box_x, box_y, box_w, box_h, {20, 16, 30, 160})
+	raylib.DrawRectangleLinesEx(
+		{f32(box_x), f32(box_y), f32(box_w), f32(box_h)},
+		1,
+		{71, 50, 75, 255},
+	)
+	raylib.DrawTextEx(state.font, timer_text, {f32(box_x + PAD), f32(box_y + PAD)}, text_size, 1, {255, 255, 255, 220})
 }
 
 spawn_health_crate :: proc(state: ^Game_State, pos: raylib.Vector2) {
