@@ -381,15 +381,8 @@ check_collision :: proc(
 		cell := map_data.grid[ty][tx]
 		sym := cell.symbol
 
-		// p, e, f, h, k, c, n tiles are passable (spawn points, pickups, NPCs)
-		if sym == 'p' ||
-		   sym == 'e' ||
-		   sym == 'f' ||
-		   sym == 'h' ||
-		   sym == 'k' ||
-		   sym == 'c' ||
-		   sym == 'n' ||
-		   sym == 'B' {
+		// Tiles with no tile image (spawn points) are always passable
+		if td, ok := map_data.metadata[sym]; ok && len(td.tiles) == 0 {
 			continue
 		}
 
@@ -685,19 +678,20 @@ Door_Block_Reason :: enum {
 	Not_Blocked,
 	Needs_Key,
 	Needs_Dialogue,
+	Needs_Enemies_Cleared,
 }
 
-check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map, dialogue_done: bool = false) -> Door_Block_Reason {
+check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map, enemies_cleared: bool, dialogue_done: bool = false) -> Door_Block_Reason {
 	if player.move_dir.x == 0 && player.move_dir.y == 0 {
 		return .Not_Blocked
 	}
 
-	// Check the tile the player is trying to move into
-	center_x := player.pos.x + player.move_dir.x * f32(PLAYER_HITBOX) / 2
-	center_y :=
-		player.pos.y - f32(SPRITE_DST_SIZE) / 2 + player.move_dir.y * f32(PLAYER_HITBOX) / 2
-	tx := int(center_x) / TILE_SIZE
-	ty := int(center_y) / TILE_SIZE
+	// Probe from the hitbox edge in the move direction to find the adjacent tile
+	hb := f32(PLAYER_HITBOX)
+	probe_x := player.pos.x + player.move_dir.x * (hb / 2 + 2)
+	probe_y := player.pos.y - hb / 2 + player.move_dir.y * (hb / 2 + 2)
+	tx := int(probe_x) / TILE_SIZE
+	ty := int(probe_y) / TILE_SIZE
 
 	if ty < 0 || ty >= map_data.height || tx < 0 || tx >= len(map_data.grid[ty]) {
 		return .Not_Blocked
@@ -705,6 +699,9 @@ check_door_blocked :: proc(player: ^Player, map_data: ^dm.Dot_Map, dialogue_done
 
 	cell := map_data.grid[ty][tx]
 	if td, ok := map_data.metadata[cell.symbol]; ok {
+		if strings.contains(td.condition, "enemies_cleared") && !enemies_cleared {
+			return .Needs_Enemies_Cleared
+		}
 		if strings.contains(td.condition, "has_key") && !player.has_key {
 			return .Needs_Key
 		}

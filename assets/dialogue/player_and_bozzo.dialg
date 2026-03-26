@@ -1,8 +1,10 @@
 *This dialogue scene occurs if the player interacts with Bozzo, the NPC in home_base.map*
 [START]
-BOZZO: You're just in time! Donald Monroe and his goons have been terrorizing our little village.
+BOZZO: You're just in time! The vilainous crimelord Donald Monroe has laid seige to our town and corrupted our sacred land!
 [PRESS ENTER]
-BOZZO: Our local police have tried to subdue them but to no avail. We need the famous crime fighting duo!
+BOZZO: He's even brainwashed the forest critters and turned them hostile.
+[PRESS ENTER]
+BOZZO: Our local police have tried to subdue Monroe but to no avail. We need the famous crime fighting duo!
 [PRESS ENTER]
 BOZZO: Erm, aren't their supposed to be two of you?
 [PRESS ENTER]
@@ -12,11 +14,19 @@ BOZZO: Well, let me offer you some advice. You can move and avoid enemies with [
 [PRESS ENTER]
 BOZZO: Point your reticle in the direction of an enemy and press or hold [LEFT CLICK] to fire!
 [PRESS ENTER]
+BOZZO: If you get lost, just look up at that arrow in the upper left hand corner. It will always be pointing to the room's exit.
+[PRESS ENTER]
+BOZZO: But remember, you've gotta get rid of all the enemies in a room. You won't be allowed to move on unil you do! 
+[PRESS ENTER]
 BOZZO: In the next room, you'll find a chest which will give you a new weapon if you want it.
 [PRESS ENTER]
 BOZZO: ...Although I don't remember which weapon is in it... Its either the Slinger, the Flamethrower, or the Raygun. All good choices.
 [PRESS ENTER]
 BOZZO: Eventually you will need to reload your weapon, which you can do by pressing [RIGHT CLICK].
+[PRESS ENTER]
+BOZZO: The faster you can clear the enemies and capture Monroe, the higher your score will be at the end. 
+[PRESS ENTER]
+BOZZO: If you haven't taken much damage by the end of your run, your score will be nice and high too.d 
 [PRESS ENTER]
 BOZZO: Oh and one more tip. As long as you you are not moving [WASD], you will automatically face the direction you are shooting [LEFT CLICK].
 [PRESS ENTER]

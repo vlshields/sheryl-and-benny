@@ -76,6 +76,7 @@ Game_State :: struct {
 	phase:                  Game_Phase,
 	menu_selection:         i32,
 	door_locked_msg_timer:  f32,
+	enemies_msg_timer:      f32,
 	door_unlocked:          bool,
 	door_anim_timer:        f32,
 	door_anim_frame:        i32,
@@ -103,6 +104,7 @@ Game_State :: struct {
 	exit_door_pos:          raylib.Vector2,
 	has_exit_door:          bool,
 	compass_arrow_tex:      raylib.Texture2D,
+	ui_marker_tex:          raylib.Texture2D,
 	render_target:          raylib.RenderTexture2D,
 	screen_scale:           f32,
 	screen_offset:          raylib.Vector2,
@@ -117,6 +119,7 @@ Game_State :: struct {
 	menu_sheryl_frame:      i32,
 	menu_benny_frame:       i32,
 	menu_sprite_timer:      f32,
+	victory_star_tex:       raylib.Texture2D,
 	should_quit:            bool,
 }
 
@@ -287,6 +290,8 @@ init :: proc() {
 	gs.reticle_tex = raylib.LoadTexture("assets/sprites/reticle.png")
 	gs.ammo_tex = raylib.LoadTexture("assets/sprites/ammo.png")
 	gs.compass_arrow_tex = raylib.LoadTexture("assets/sprites/compass_arrow.png")
+	gs.ui_marker_tex = raylib.LoadTexture("assets/sprites/ui_selection_marker.png")
+	gs.victory_star_tex = raylib.LoadTexture("assets/sprites/victory_stars.png")
 	raylib.HideCursor()
 
 	// Use the default raylib font
@@ -303,17 +308,19 @@ init :: proc() {
 	gs.menu_title_y = -60
 	gs.menu_options_x = f32(SCREEN_WIDTH) + 100
 
-	// Find spawn point
+	// Find spawn point from metadata (spawn_point=[player1,player2])
 	spawn_x: f32 = 0
 	spawn_y: f32 = 0
 	spawn_found := false
 	for row, y in gs.map_data.grid {
 		for cell, x in row {
-			if cell.symbol == 'p' && !spawn_found {
-				spawn_x = f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2
-				spawn_y = f32(y * TILE_SIZE) + f32(TILE_SIZE)
-				spawn_found = true
-				break
+			if td, ok := gs.map_data.metadata[cell.symbol]; ok {
+				if strings.contains(td.other, "spawn_point=[player") {
+					spawn_x = f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2
+					spawn_y = f32(y * TILE_SIZE) + f32(TILE_SIZE)
+					spawn_found = true
+					break
+				}
 			}
 		}
 		if spawn_found {
@@ -365,6 +372,12 @@ update :: proc() {
 		}
 
 	case .Character_Select:
+		gs.menu_sprite_timer += dt
+		if gs.menu_sprite_timer >= ANIM_FRAME_TIME {
+			gs.menu_sprite_timer -= ANIM_FRAME_TIME
+			gs.menu_sheryl_frame = (gs.menu_sheryl_frame + 1) % 3
+			gs.menu_benny_frame = (gs.menu_benny_frame + 1) % 3
+		}
 		handle_menu_input(&gs)
 
 	case .Playing:
@@ -492,11 +505,16 @@ update :: proc() {
 			update_npcs(&gs, dt)
 
 			// Check if player is bumping into a locked door
-			door_block := check_door_blocked(&gs.player, &gs.map_data, gs.dialogue.completed)
+			door_block := check_door_blocked(&gs.player, &gs.map_data, gs.enemies_cleared, gs.dialogue.completed)
 			if door_block != .Not_Blocked {
 				if door_block == .Needs_Dialogue && gs.door_dialogue.loaded && !gs.door_dialogue.active {
 					start_dialogue(&gs.door_dialogue)
-				} else {
+				} else if door_block == .Needs_Enemies_Cleared && gs.current_map_name != "home_base.map" {
+					if gs.enemies_msg_timer <= 0 {
+						play_sfx(gs.audio.ui_back)
+					}
+					gs.enemies_msg_timer = 2.0
+				} else if door_block == .Needs_Key {
 					if gs.door_locked_msg_timer <= 0 {
 						play_sfx(gs.audio.ui_back)
 					}
@@ -505,6 +523,9 @@ update :: proc() {
 			}
 			if gs.door_locked_msg_timer > 0 {
 				gs.door_locked_msg_timer -= dt
+			}
+			if gs.enemies_msg_timer > 0 {
+				gs.enemies_msg_timer -= dt
 			}
 
 			// Unlock door when player reaches it with key and enemies cleared
@@ -642,6 +663,15 @@ update :: proc() {
 			raylib.DrawTextEx(gs.font, msg, {msg_x, msg_y}, msg_size, 1, {255, 220, 50, 255})
 		}
 
+		if gs.enemies_msg_timer > 0 {
+			msg :: "Clear the remaining enemies!"
+			msg_size: f32 = 14
+			msg_w := raylib.MeasureTextEx(gs.font, msg, msg_size, 1).x
+			msg_x := (f32(SCREEN_WIDTH) - msg_w) / 2
+			msg_y: f32 = f32(SCREEN_HEIGHT) - 50
+			raylib.DrawTextEx(gs.font, msg, {msg_x, msg_y}, msg_size, 1, {255, 220, 50, 255})
+		}
+
 		// Draw dialogue box (screen space)
 		draw_dialogue(&gs.dialogue, gs.font)
 		draw_dialogue(&gs.door_dialogue, gs.font)
@@ -712,6 +742,7 @@ shutdown :: proc() {
 	raylib.UnloadTexture(gs.reticle_tex)
 	raylib.UnloadTexture(gs.ammo_tex)
 	raylib.UnloadTexture(gs.compass_arrow_tex)
+	raylib.UnloadTexture(gs.ui_marker_tex)
 	raylib.UnloadShader(gs.white_flash_shader)
 
 	raylib.UnloadTexture(gs.menu_bg_tex)
@@ -799,12 +830,12 @@ draw_character_select :: proc(state: ^Game_State) {
 		y: f32 = 140
 		color: raylib.Color = state.menu_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 		preview_x := f32(SCREEN_WIDTH) / 2 - 60
-		src := raylib.Rectangle{0, 0, f32(SPRITE_SRC_SIZE), f32(SPRITE_SRC_SIZE)}
+		src := raylib.Rectangle{f32(state.menu_sheryl_frame * SPRITE_SRC_SIZE), 0, f32(SPRITE_SRC_SIZE), f32(SPRITE_SRC_SIZE)}
 		dst := raylib.Rectangle{preview_x, y - 14, PREVIEW_SIZE, PREVIEW_SIZE}
 		raylib.DrawTexturePro(state.sheryl_idle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
-		name_x := preview_x + PREVIEW_SIZE + 12
+		name_x := preview_x + PREVIEW_SIZE + 62
 		if state.menu_selection == 0 {
-			raylib.DrawTextEx(state.font, ">", {name_x - 18, y}, option_size, 1, color)
+			draw_ui_marker(state, name_x - 18, y + 3, 14, color)
 		}
 		raylib.DrawTextEx(state.font, "SHERYL", {name_x, y}, option_size, 1, color)
 	}
@@ -814,12 +845,12 @@ draw_character_select :: proc(state: ^Game_State) {
 		y: f32 = 210
 		color: raylib.Color = state.menu_selection == 1 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 		preview_x := f32(SCREEN_WIDTH) / 2 - 60
-		src := raylib.Rectangle{0, 0, f32(SPRITE_SRC_SIZE), f32(SPRITE_SRC_SIZE)}
+		src := raylib.Rectangle{f32(state.menu_benny_frame * SPRITE_SRC_SIZE), 0, f32(SPRITE_SRC_SIZE), f32(SPRITE_SRC_SIZE)}
 		dst := raylib.Rectangle{preview_x, y - 14, PREVIEW_SIZE, PREVIEW_SIZE}
 		raylib.DrawTexturePro(state.benny_idle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
-		name_x := preview_x + PREVIEW_SIZE + 12
+		name_x := preview_x + PREVIEW_SIZE + 62
 		if state.menu_selection == 1 {
-			raylib.DrawTextEx(state.font, ">", {name_x - 18, y}, option_size, 1, color)
+			draw_ui_marker(state, name_x - 18, y + 3, 14, color)
 		}
 		raylib.DrawTextEx(state.font, "BENNY", {name_x, y}, option_size, 1, color)
 	}
@@ -882,7 +913,7 @@ draw_game_over :: proc(state: ^Game_State) {
 	restart_y := f32(PANEL_Y) + 65
 	restart_color: raylib.Color = state.game_over_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 	if state.game_over_selection == 0 {
-		raylib.DrawTextEx(state.font, ">", {restart_x - 18, restart_y}, option_size, 1, restart_color)
+		draw_ui_marker(state, restart_x - 18, restart_y + 3, 14, restart_color)
 	}
 	raylib.DrawTextEx(state.font, "RESTART", {restart_x, restart_y}, option_size, 1, restart_color)
 
@@ -892,7 +923,7 @@ draw_game_over :: proc(state: ^Game_State) {
 	quit_y := f32(PANEL_Y) + 95
 	quit_color: raylib.Color = state.game_over_selection == 0 ? {180, 180, 180, 255} : {255, 220, 50, 255}
 	if state.game_over_selection == 1 {
-		raylib.DrawTextEx(state.font, ">", {quit_x - 18, quit_y}, option_size, 1, quit_color)
+		draw_ui_marker(state, quit_x - 18, quit_y + 3, 14, quit_color)
 	}
 	raylib.DrawTextEx(state.font, "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
 }
@@ -971,12 +1002,19 @@ draw_boss_victory :: proc(state: ^Game_State) {
 
 	// Stars
 	stars: int = score >= 140 ? 3 : (score >= 60 ? 2 : 1)
-	star_text: cstring = stars == 3 ? "* * *" : (stars == 2 ? "* *" : "*")
-	star_size: f32 = 18
-	star_w := raylib.MeasureTextEx(state.font, star_text, star_size, 1).x
-	star_x := f32(PANEL_X) + (f32(PANEL_W) - star_w) / 2
+	STAR_SIZE :: 16
+	STAR_GAP :: 4
+	total_star_w := f32(stars * STAR_SIZE + (stars - 1) * STAR_GAP)
+	star_x := f32(PANEL_X) + (f32(PANEL_W) - total_star_w) / 2
 	star_y := f32(PANEL_Y) + 80
-	raylib.DrawTextEx(state.font, star_text, {star_x, star_y}, star_size, 1, {255, 220, 50, 255})
+	for i in 0 ..< stars {
+		raylib.DrawTexture(
+			state.victory_star_tex,
+			i32(star_x) + i32(i) * (STAR_SIZE + STAR_GAP),
+			i32(star_y),
+			raylib.WHITE,
+		)
+	}
 
 	// Menu options
 	option_size: f32 = 20
@@ -987,7 +1025,7 @@ draw_boss_victory :: proc(state: ^Game_State) {
 	continue_y := f32(PANEL_Y) + 115
 	continue_color: raylib.Color = state.boss_victory_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 	if state.boss_victory_selection == 0 {
-		raylib.DrawTextEx(state.font, ">", {continue_x - 18, continue_y}, option_size, 1, continue_color)
+		draw_ui_marker(state, continue_x - 18, continue_y + 3, 14, continue_color)
 	}
 	raylib.DrawTextEx(state.font, "CONTINUE", {continue_x, continue_y}, option_size, 1, continue_color)
 
@@ -997,7 +1035,7 @@ draw_boss_victory :: proc(state: ^Game_State) {
 	quit_y := f32(PANEL_Y) + 145
 	quit_color: raylib.Color = state.boss_victory_selection == 0 ? {180, 180, 180, 255} : {255, 220, 50, 255}
 	if state.boss_victory_selection == 1 {
-		raylib.DrawTextEx(state.font, ">", {quit_x - 18, quit_y}, option_size, 1, quit_color)
+		draw_ui_marker(state, quit_x - 18, quit_y + 3, 14, quit_color)
 	}
 	raylib.DrawTextEx(state.font, "QUIT", {quit_x, quit_y}, option_size, 1, quit_color)
 }
@@ -1183,7 +1221,7 @@ draw_pause_menu :: proc(state: ^Game_State) {
 			opt_y := f32(PANEL_Y) + 55 + f32(i) * 30
 			color: raylib.Color = state.pause_selection == i ? {255, 220, 50, 255} : {180, 180, 180, 255}
 			if state.pause_selection == i {
-				raylib.DrawTextEx(state.font, ">", {opt_x - 18, opt_y}, option_size, 1, color)
+				draw_ui_marker(state, opt_x - 18, opt_y + 3, 14, color)
 			}
 			raylib.DrawTextEx(state.font, options[i], {opt_x, opt_y}, option_size, 1, color)
 		}
@@ -1270,7 +1308,7 @@ draw_pause_menu :: proc(state: ^Game_State) {
 			y: f32 = f32(PANEL_Y) + 50
 			color: raylib.Color = state.pause_audio_selection == 0 ? selected_color : label_color
 			if state.pause_audio_selection == 0 {
-				raylib.DrawTextEx(state.font, ">", {lx - 14, y - 2}, label_size, 1, color)
+				draw_ui_marker(state, lx - 14, y, 12, color)
 			}
 			raylib.DrawTextEx(state.font, "MUSIC", {lx, y - 2}, label_size, 1, color)
 
@@ -1295,7 +1333,7 @@ draw_pause_menu :: proc(state: ^Game_State) {
 			y: f32 = f32(PANEL_Y) + 80
 			color: raylib.Color = state.pause_audio_selection == 1 ? selected_color : label_color
 			if state.pause_audio_selection == 1 {
-				raylib.DrawTextEx(state.font, ">", {lx - 14, y - 2}, label_size, 1, color)
+				draw_ui_marker(state, lx - 14, y, 12, color)
 			}
 			raylib.DrawTextEx(state.font, "SFX", {lx, y - 2}, label_size, 1, color)
 
@@ -1323,7 +1361,7 @@ draw_pause_menu :: proc(state: ^Game_State) {
 			back_x := f32(PANEL_X) + (f32(PANEL_W) - back_w) / 2
 			back_y := f32(PANEL_Y) + f32(PANEL_H) - 32
 			if state.pause_audio_selection == 2 {
-				raylib.DrawTextEx(state.font, ">", {back_x - 18, back_y}, back_size, 1, back_color)
+				draw_ui_marker(state, back_x - 18, back_y + 1, 12, back_color)
 			}
 			raylib.DrawTextEx(state.font, "BACK", {back_x, back_y}, back_size, 1, back_color)
 		}
@@ -1355,7 +1393,7 @@ draw_pause_menu :: proc(state: ^Game_State) {
 		yes_y := f32(PANEL_Y) + 60
 		yes_color: raylib.Color = state.pause_confirm_selection == 0 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 		if state.pause_confirm_selection == 0 {
-			raylib.DrawTextEx(state.font, ">", {yes_x - 18, yes_y}, option_size, 1, yes_color)
+			draw_ui_marker(state, yes_x - 18, yes_y + 3, 14, yes_color)
 		}
 		raylib.DrawTextEx(state.font, "YES", {yes_x, yes_y}, option_size, 1, yes_color)
 
@@ -1365,7 +1403,7 @@ draw_pause_menu :: proc(state: ^Game_State) {
 		no_y := f32(PANEL_Y) + 90
 		no_color: raylib.Color = state.pause_confirm_selection == 1 ? {255, 220, 50, 255} : {180, 180, 180, 255}
 		if state.pause_confirm_selection == 1 {
-			raylib.DrawTextEx(state.font, ">", {no_x - 18, no_y}, option_size, 1, no_color)
+			draw_ui_marker(state, no_x - 18, no_y + 3, 14, no_color)
 		}
 		raylib.DrawTextEx(state.font, "NO", {no_x, no_y}, option_size, 1, no_color)
 	}
@@ -1533,17 +1571,19 @@ transition_to_map :: proc(state: ^Game_State, map_name: string) {
 		}
 	}
 
-	// Find spawn point
+	// Find spawn point from metadata (spawn_point=[player1,player2])
 	spawn_x: f32 = 0
 	spawn_y: f32 = 0
 	spawn_found := false
 	for row, y in state.map_data.grid {
 		for cell, x in row {
-			if cell.symbol == 'p' && !spawn_found {
-				spawn_x = f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2
-				spawn_y = f32(y * TILE_SIZE) + f32(TILE_SIZE)
-				spawn_found = true
-				break
+			if td, ok := state.map_data.metadata[cell.symbol]; ok {
+				if strings.contains(td.other, "spawn_point=[player") {
+					spawn_x = f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2
+					spawn_y = f32(y * TILE_SIZE) + f32(TILE_SIZE)
+					spawn_found = true
+					break
+				}
 			}
 		}
 		if spawn_found {
@@ -1596,6 +1636,7 @@ transition_to_map :: proc(state: ^Game_State, map_name: string) {
 
 	state.enemies_cleared = false
 	state.door_locked_msg_timer = 0
+	state.enemies_msg_timer = 0
 	state.door_unlocked = false
 	state.door_anim_timer = 0
 	state.door_anim_frame = 0
@@ -1682,6 +1723,12 @@ draw_speedrun_timer :: proc(state: ^Game_State) {
 	raylib.DrawTextEx(state.font, timer_text, {f32(box_x + PAD), f32(box_y + PAD)}, text_size, 1, {255, 255, 255, 220})
 }
 
+draw_ui_marker :: proc(state: ^Game_State, x: f32, y: f32, size: f32, color: raylib.Color) {
+	src := raylib.Rectangle{0, 0, 16, 16}
+	dst := raylib.Rectangle{x, y, size, size}
+	raylib.DrawTexturePro(state.ui_marker_tex, src, dst, {0, 0}, 0, color)
+}
+
 spawn_health_crate :: proc(state: ^Game_State, pos: raylib.Vector2) {
 	for &crate in state.health_crates {
 		if !crate.active {
@@ -1740,15 +1787,23 @@ init_npcs :: proc(state: ^Game_State) {
 	npc_idx := 0
 	for row, y in state.map_data.grid {
 		for cell, x in row {
-			if cell.symbol == 'n' && npc_idx < MAX_NPCS {
-				state.npcs[npc_idx] = NPC {
-					pos          = {f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2, f32(y * TILE_SIZE) + f32(TILE_SIZE)},
-					active       = true,
-					sprite_sheet = state.npc_bunny_tex,
-					frame_count  = 3,
-				}
-				npc_idx += 1
+			td, ok := state.map_data.metadata[cell.symbol]
+			if !ok {
+				continue
 			}
+			if !strings.contains(td.other, "spawn_point=npc_") {
+				continue
+			}
+			if npc_idx >= MAX_NPCS {
+				continue
+			}
+			state.npcs[npc_idx] = NPC {
+				pos          = {f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2, f32(y * TILE_SIZE) + f32(TILE_SIZE)},
+				active       = true,
+				sprite_sheet = state.npc_bunny_tex,
+				frame_count  = 3,
+			}
+			npc_idx += 1
 		}
 	}
 }
@@ -1757,7 +1812,13 @@ init_signs :: proc(state: ^Game_State) {
 	sign_idx := 0
 	for row, y in state.map_data.grid {
 		for cell, x in row {
-			if cell.symbol == 's' && sign_idx < MAX_SIGNS {
+			if td, ok := state.map_data.metadata[cell.symbol]; ok {
+				if !strings.contains(td.other, "can_interact=true") {
+					continue
+				}
+				if sign_idx >= MAX_SIGNS {
+					continue
+				}
 				state.signs[sign_idx] = Sign {
 					pos    = {f32(x * TILE_SIZE) + f32(TILE_SIZE) / 2, f32(y * TILE_SIZE) + f32(TILE_SIZE)},
 					active = true,

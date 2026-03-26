@@ -1,13 +1,13 @@
 
 MAP_START
-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xtttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttx
 xwwwwwwwwwwwwwwwwwwwwwwwwpwwwwwwwwwwwwwwwwwwwwBwwwwwwwwwwwwwwwx
 xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
 xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
 xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
 xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
-dwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwx
+xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbx
 MAP_END
 
 
@@ -20,11 +20,26 @@ metadata {
         other: nil
     }
 
+    b: {
+        tiles: assets/tiles/arena_wall_bottom.png,
+        passable:false,
+        collectable:false,
+        other: nil
+    }
+
+        t: {
+        tiles: assets/tiles/arena_wall_top.png,
+        passable:false,
+        collectable:false,
+        other: nil
+    }
+
+
     w: {
         tiles:[
 
             assets/tiles/arena_floor.png,
-            assets/tiles/arena_floor2.png
+            
         ],
         passable:true,
         collectable:false,
@@ -32,21 +47,8 @@ metadata {
 
     }
 
-    d: {
-        tiles:assets/tiles/tile_0140.png,
-          passable:true,
-        collectable:false,
-        other: to_room=pavilion.map, condition=enemies_cleared
 
-    }
 
-        t: {
-        tiles:assets/tiles/tile_0216.png
-          passable:true,
-        collectable:true,
-        other: contains_item=blaster
-
-    }
 
             p: {
         tiles:nil
@@ -63,7 +65,7 @@ metadata {
 
     }
     B: {
-    tiles:assets/sprites/enemy_boss.png
+    tiles:nil
         passable:true,
     collectable:nil,
     other: spawn_condition=three_enemy_waves_cleared

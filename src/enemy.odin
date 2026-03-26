@@ -41,25 +41,24 @@ Enemy :: struct {
 init_enemies :: proc(gs: ^Game_State) {
 	enemy_idx := 0
 
-	// Parse spawn_time_offset from 'e' metadata
-	slug_spawn_time: f32 = 1.3
-	if td, ok := gs.map_data.metadata['e']; ok {
-		slug_spawn_time = parse_spawn_time(td.other)
-	}
-
-	fly_spawn_time: f32 = 1.3
-	if td, ok := gs.map_data.metadata['f']; ok {
-		fly_spawn_time = parse_spawn_time(td.other)
-	}
-
-	bunny_spawn_time: f32 = 1.3
-	if td, ok := gs.map_data.metadata['c']; ok {
-		bunny_spawn_time = parse_spawn_time(td.other)
-	}
-
 	for row, y in gs.map_data.grid {
 		for cell, x in row {
-			if cell.symbol == 'e' && enemy_idx < MAX_ENEMIES {
+			td, ok := gs.map_data.metadata[cell.symbol]
+			if !ok {
+				continue
+			}
+
+			spawn_type := extract_spawn_type(td.other)
+			if spawn_type == "" {
+				continue
+			}
+			if enemy_idx >= MAX_ENEMIES {
+				continue
+			}
+
+			spawn_time := parse_spawn_time(td.other)
+
+			if spawn_type == "enemy_slug" {
 				gs.enemies[enemy_idx] = Enemy {
 					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
 					hp           = ENEMY_HP,
@@ -69,10 +68,10 @@ init_enemies :: proc(gs: ^Game_State) {
 					dead_tex     = gs.slug_dead_tex,
 					frame_count  = 2,
 					alive        = true,
-					spawn_timer  = slug_spawn_time,
+					spawn_timer  = spawn_time,
 				}
 				enemy_idx += 1
-			} else if cell.symbol == 'c' && enemy_idx < MAX_ENEMIES {
+			} else if spawn_type == "enemy_crazy_bunny" {
 				gs.enemies[enemy_idx] = Enemy {
 					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
 					hp           = CRAZY_BUNNY_HP,
@@ -82,10 +81,10 @@ init_enemies :: proc(gs: ^Game_State) {
 					dead_tex     = gs.bunny_dead_tex,
 					frame_count  = 3,
 					alive        = true,
-					spawn_timer  = bunny_spawn_time,
+					spawn_timer  = spawn_time,
 				}
 				enemy_idx += 1
-			} else if cell.symbol == 'f' && enemy_idx < MAX_ENEMIES {
+			} else if spawn_type == "enemy_fly" {
 				gs.enemies[enemy_idx] = Enemy {
 					pos          = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)},
 					hp           = FLY_HP,
@@ -95,12 +94,31 @@ init_enemies :: proc(gs: ^Game_State) {
 					dead_tex     = gs.fly_dead_tex,
 					frame_count  = 2,
 					alive        = true,
-					spawn_timer  = fly_spawn_time,
+					spawn_timer  = spawn_time,
 				}
 				enemy_idx += 1
 			}
 		}
 	}
+}
+
+extract_spawn_type :: proc(other: string) -> string {
+	if len(other) == 0 {
+		return ""
+	}
+	parts := strings.split(other, ",")
+	defer delete(parts)
+	for part in parts {
+		kv := strings.split(strings.trim_space(part), "=")
+		defer delete(kv)
+		if len(kv) == 2 && strings.trim_space(kv[0]) == "spawn_point" {
+			val := strings.trim_space(kv[1])
+			if strings.has_prefix(val, "enemy_") {
+				return val
+			}
+		}
+	}
+	return ""
 }
 
 parse_spawn_time :: proc(other: string) -> f32 {

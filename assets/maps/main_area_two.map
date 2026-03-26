@@ -69,7 +69,7 @@ metadata {
 
         h: {
         tiles:assets/sprites/health_pickup.png
-          passable:nil,
+          passable:true,
         collectable:true,
         other: amount_healed=15
 
@@ -91,7 +91,7 @@ metadata {
     }
             k: {
         tiles:assets/sprites/key.png
-          passable:nil,
+          passable:true,
         collectable:true,
         other: number_of_uses=1
 

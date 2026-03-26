@@ -41,8 +41,8 @@ draw_map :: proc(gs: ^Game_State) {
 			cell := row[x]
 			sym := cell.symbol
 
-			// Spawn points, enemy spawns, NPCs: draw floor tile instead
-			if sym == 'p' || sym == 'e' || sym == 'f' || sym == 'c' || sym == 'n' || sym == 'B' {
+			// Spawn points (tiles:nil in metadata): draw floor tile instead
+			if td, ok := map_data.metadata[sym]; ok && len(td.tiles) == 0 {
 				if floor_textures != nil && len(floor_textures) > 0 {
 					raylib.DrawTexture(
 						floor_textures[0],
@@ -54,8 +54,8 @@ draw_map :: proc(gs: ^Game_State) {
 				continue
 			}
 
-			// Collected tiles: draw floor instead
-			if cell.collected {
+			// Collected tiles: draw floor instead (except treasure chests)
+			if cell.collected && sym != 't' {
 				if floor_textures != nil && len(floor_textures) > 0 {
 					raylib.DrawTexture(
 						floor_textures[0],
@@ -67,8 +67,8 @@ draw_map :: proc(gs: ^Game_State) {
 				continue
 			}
 
-			// Key, door, and sign tiles: draw floor underneath first
-			if sym == 'k' || sym == 'd' || sym == 's' {
+			// Non-floor tiles with images: draw floor underneath (walls cover it; sprites need it)
+			if sym != 'w' {
 				if floor_textures != nil && len(floor_textures) > 0 {
 					raylib.DrawTexture(
 						floor_textures[0],
@@ -77,6 +77,30 @@ draw_map :: proc(gs: ^Game_State) {
 						raylib.WHITE,
 					)
 				}
+			}
+
+			// Treasure chest: frame 0 = closed, frame 1 = opened (after collection)
+			if sym == 't' {
+				if texs, ok := &gs.tile_textures[sym]; ok {
+					if len(texs) > 0 {
+						tex := texs[0]
+						frame: i32 = cell.collected ? 1 : 0
+						src := raylib.Rectangle {
+							x      = f32(frame * TILE_SIZE),
+							y      = 0,
+							width  = f32(TILE_SIZE),
+							height = f32(TILE_SIZE),
+						}
+						dst := raylib.Rectangle {
+							x      = f32(x * TILE_SIZE),
+							y      = f32(y * TILE_SIZE),
+							width  = f32(TILE_SIZE),
+							height = f32(TILE_SIZE),
+						}
+						raylib.DrawTexturePro(tex, src, dst, {0, 0}, 0, raylib.WHITE)
+					}
+				}
+				continue
 			}
 
 			// Door tiles: draw specific animation frame from spritesheet
@@ -100,6 +124,11 @@ draw_map :: proc(gs: ^Game_State) {
 						raylib.DrawTexturePro(tex, src, dst, {0, 0}, 0, raylib.WHITE)
 					}
 				}
+				continue
+			}
+
+			// Boss symbol is just a spawn point — never draw a tile for it
+			if sym == 'B' {
 				continue
 			}
 
@@ -336,15 +365,17 @@ spawn_wave_enemy :: proc(gs: ^Game_State) {
 spawn_boss :: proc(gs: ^Game_State) {
 	arena := &gs.arena
 
-	// Find boss spawn position from 'B' tile in grid
+	// Find boss spawn position from metadata (spawn_condition=*)
 	boss_pos := raylib.Vector2{0, 0}
 	found := false
 	for row, y in gs.map_data.grid {
 		for cell, x in row {
-			if cell.symbol == 'B' {
-				boss_pos = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)}
-				found = true
-				break
+			if td, ok := gs.map_data.metadata[cell.symbol]; ok {
+				if strings.contains(td.other, "spawn_condition=") {
+					boss_pos = {f32(x * TILE_SIZE), f32(y * TILE_SIZE)}
+					found = true
+					break
+				}
 			}
 		}
 		if found {
@@ -1197,7 +1228,7 @@ draw_main_menu :: proc(gs: ^Game_State) {
 			y: f32 = 200 + f32(i) * 35
 			color: raylib.Color = gs.menu_main_selection == i ? {255, 220, 50, 255} : {180, 180, 180, 255}
 			if gs.menu_main_selection == i {
-				raylib.DrawTextEx(gs.font, ">", {gs.menu_options_x - 18, y}, option_size, 1, color)
+				draw_ui_marker(gs, gs.menu_options_x - 18, y + 4, 14, color)
 			}
 			raylib.DrawTextEx(gs.font, options[i], {gs.menu_options_x, y}, option_size, 1, color)
 		}
