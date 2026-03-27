@@ -112,3 +112,5 @@ MAX_PARTICLES :: 128
 SCORE_BASE         :: 200
 SCORE_TIME_PENALTY :: 10  // per minute
 SCORE_HP_PENALTY   :: 10  // per 10 HP lost
+
+ROOM_TRANSITION_DURATION :: 0.35 // seconds for each fade phase

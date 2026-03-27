@@ -14,6 +14,22 @@ Game_Phase :: enum {
 	Playing,
 }
 
+Transition_Kind :: enum {
+	Change_Room,
+	To_Character_Select,
+	Start_Playing,
+	Reset_Game,
+	Reset_To_Menu,
+}
+
+Screen_Transition :: struct {
+	active:     bool,
+	fade_out:   bool, // true = fading to black, false = fading from black
+	timer:      f32,
+	kind:       Transition_Kind,
+	target_map: string,
+}
+
 Pause_Submenu :: enum {
 	None,
 	Controls,
@@ -105,6 +121,7 @@ Game_State :: struct {
 	has_exit_door:          bool,
 	compass_arrow_tex:      raylib.Texture2D,
 	ui_marker_tex:          raylib.Texture2D,
+	screen_transition:      Screen_Transition,
 	render_target:          raylib.RenderTexture2D,
 	screen_scale:           f32,
 	screen_offset:          raylib.Vector2,
@@ -362,27 +379,35 @@ update :: proc() {
 
 	switch gs.phase {
 	case .Main_Menu:
-		action := update_main_menu(&gs)
-		if action == 1 {
-			gs.phase = .Character_Select
-			gs.menu_selection = 0
-		} else if action == 2 {
-			gs.should_quit = true
-			return
+		update_screen_transition(&gs, dt)
+		if !gs.screen_transition.active {
+			action := update_main_menu(&gs)
+			if action == 1 {
+				start_screen_transition(&gs, .To_Character_Select)
+			} else if action == 2 {
+				gs.should_quit = true
+				return
+			}
 		}
 
 	case .Character_Select:
+		update_screen_transition(&gs, dt)
 		gs.menu_sprite_timer += dt
 		if gs.menu_sprite_timer >= ANIM_FRAME_TIME {
 			gs.menu_sprite_timer -= ANIM_FRAME_TIME
 			gs.menu_sheryl_frame = (gs.menu_sheryl_frame + 1) % 3
 			gs.menu_benny_frame = (gs.menu_benny_frame + 1) % 3
 		}
-		handle_menu_input(&gs)
+		if !gs.screen_transition.active {
+			handle_menu_input(&gs)
+		}
 
 	case .Playing:
+		// Room transition update — blocks all gameplay while active
+		update_screen_transition(&gs, dt)
+
 		// Pause toggle
-		if raylib.IsKeyPressed(.P) && !gs.game_over && !gs.boss_victory {
+		if raylib.IsKeyPressed(.P) && !gs.game_over && !gs.boss_victory && !gs.screen_transition.active {
 			if gs.paused {
 				gs.paused = false
 				gs.pause_submenu = .None
@@ -396,15 +421,15 @@ update :: proc() {
 			}
 		}
 
-		if gs.paused {
+		if gs.screen_transition.active {
+			update_camera(&gs)
+		} else if gs.paused {
 			action := handle_pause_input(&gs)
 			if action == 1 {
 				gs.paused = false
 				gs.pause_submenu = .None
 			} else if action == 2 {
-				reset_game(&gs)
-				gs.phase = .Main_Menu
-				gs.menu_selection = 0
+				start_screen_transition(&gs, .Reset_To_Menu)
 			}
 		} else if gs.door_dialogue.active {
 			update_dialogue(&gs.door_dialogue, dt, &gs.audio)
@@ -548,8 +573,8 @@ update :: proc() {
 
 			// Check door transition (only after animation completes)
 			next_map := check_door_transition(&gs)
-			if len(next_map) > 0 {
-				transition_to_map(&gs, next_map)
+			if len(next_map) > 0 && !gs.screen_transition.active {
+				start_screen_transition(&gs, .Change_Room, next_map)
 			}
 
 			if gs.player.hp <= 0 {
@@ -573,20 +598,16 @@ update :: proc() {
 		} else if gs.boss_victory {
 			action := handle_boss_victory_input(&gs)
 			if action == 1 {
-				reset_game(&gs)
+				start_screen_transition(&gs, .Reset_Game)
 			} else if action == 2 {
-				reset_game(&gs)
-				gs.phase = .Main_Menu
-				gs.menu_selection = 0
+				start_screen_transition(&gs, .Reset_To_Menu)
 			}
 		} else {
 			action := handle_game_over_input(&gs)
 			if action == 1 {
-				reset_game(&gs)
+				start_screen_transition(&gs, .Reset_Game)
 			} else if action == 2 {
-				reset_game(&gs)
-				gs.phase = .Main_Menu
-				gs.menu_selection = 0
+				start_screen_transition(&gs, .Reset_To_Menu)
 			}
 		}
 	}
@@ -695,6 +716,9 @@ update :: proc() {
 		raylib.DrawTexturePro(gs.reticle_tex, src, dst, {0, 0}, 0, raylib.WHITE)
 	}
 
+	// Room transition overlay (drawn on top of everything)
+	draw_screen_transition(&gs)
+
 	raylib.EndTextureMode()
 
 	// Blit render target scaled to fullscreen
@@ -779,11 +803,9 @@ handle_menu_input :: proc(state: ^Game_State) {
 		}
 	}
 
-	if confirmed {
+	if confirmed && !state.screen_transition.active {
 		play_sfx(state.audio.ui_confirm)
-		init_player(state)
-		update_camera(state)
-		state.phase = .Playing
+		start_screen_transition(state, .Start_Playing)
 	}
 }
 
@@ -1494,6 +1516,78 @@ check_door_transition :: proc(state: ^Game_State) -> string {
 	}
 
 	return ""
+}
+
+ease_cubic_in_out :: proc(raw_t: f32) -> f32 {
+	t := clamp(raw_t, 0, 1)
+	if t < 0.5 {
+		return 4 * t * t * t
+	}
+	p := 2 * t - 2
+	return 0.5 * p * p * p + 1
+}
+
+start_screen_transition :: proc(state: ^Game_State, kind: Transition_Kind, target_map: string = "") {
+	state.screen_transition = Screen_Transition {
+		active     = true,
+		fade_out   = true,
+		timer      = 0,
+		kind       = kind,
+		target_map = target_map,
+	}
+	if kind == .Change_Room || kind == .Reset_Game || kind == .Reset_To_Menu {
+		stop_weapon_loops(&state.audio)
+		stop_sfx(state.audio.footsteps)
+	}
+}
+
+update_screen_transition :: proc(state: ^Game_State, dt: f32) {
+	if !state.screen_transition.active {
+		return
+	}
+	state.screen_transition.timer += dt
+	if state.screen_transition.fade_out {
+		if state.screen_transition.timer >= ROOM_TRANSITION_DURATION {
+			// Execute midpoint action while screen is fully black
+			switch state.screen_transition.kind {
+			case .Change_Room:
+				transition_to_map(state, state.screen_transition.target_map)
+			case .To_Character_Select:
+				state.phase = .Character_Select
+				state.menu_selection = 0
+			case .Start_Playing:
+				init_player(state)
+				update_camera(state)
+				state.phase = .Playing
+			case .Reset_Game:
+				reset_game(state)
+			case .Reset_To_Menu:
+				reset_game(state)
+				state.phase = .Main_Menu
+				state.menu_selection = 0
+			}
+			state.screen_transition.fade_out = false
+			state.screen_transition.timer = 0
+		}
+	} else {
+		if state.screen_transition.timer >= ROOM_TRANSITION_DURATION {
+			state.screen_transition.active = false
+		}
+	}
+}
+
+draw_screen_transition :: proc(state: ^Game_State) {
+	if !state.screen_transition.active {
+		return
+	}
+	t := state.screen_transition.timer / ROOM_TRANSITION_DURATION
+	alpha: f32
+	if state.screen_transition.fade_out {
+		alpha = ease_cubic_in_out(t)
+	} else {
+		alpha = 1.0 - ease_cubic_in_out(t)
+	}
+	raylib.DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, {0, 0, 0, u8(alpha * 255)})
 }
 
 transition_to_map :: proc(state: ^Game_State, map_name: string) {
